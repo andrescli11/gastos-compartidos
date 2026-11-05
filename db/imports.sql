@@ -114,7 +114,7 @@ begin
   warning:=coalesce((select jsonb_agg(value) from jsonb_array_elements(r->'warnings') where value not in ('"TRIP_DATES_UNKNOWN"'::jsonb,'"OUTSIDE_TRIP_DATES"'::jsonb)),'[]'::jsonb);
   if dates.start_date is null then warning:=warning||'"TRIP_DATES_UNKNOWN"'::jsonb;
   elsif r->>'spentOn'<>'' and ((r->>'spentOn')<dates.start_date::text or (r->>'spentOn')>dates.end_date::text) then warning:=warning||'"OUTSIDE_TRIP_DATES"'::jsonb; end if;
-  if not (r->'warnings' @> warning and warning @> r->'warnings') then r:=r||'{"reviewed":false}'::jsonb; end if;
+  if not ((r->'warnings') @> warning and warning @> (r->'warnings')) then r:=r||'{"reviewed":false}'::jsonb; end if;
   r:=r||jsonb_build_object('warnings',warning);
   duplicates:=app_private.import_duplicates(p_trip,r);
   if r->'duplicateExpenseIds' is distinct from duplicates then
@@ -130,7 +130,7 @@ begin
   else
    r:=r||jsonb_build_object('warnings',coalesce((select jsonb_agg(value) from jsonb_array_elements(r->'warnings') where value<>'"DUPLICATE_IN_BATCH"'::jsonb),'[]'::jsonb));
   end if;
-  if not (before_warning @> r->'warnings' and r->'warnings' @> before_warning) then r:=r||'{"reviewed":false}'::jsonb; end if;
+  if not (before_warning @> (r->'warnings') and (r->'warnings') @> before_warning) then r:=r||'{"reviewed":false}'::jsonb; end if;
   output:=output||jsonb_build_array(r);
  end loop;
  return output;
