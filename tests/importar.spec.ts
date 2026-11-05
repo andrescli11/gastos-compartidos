@@ -245,3 +245,34 @@ test("editing a duplicate row invalidates review and the keep-both decision", as
     page.getByLabel("Pagador fila 1", { exact: true }),
   ).toBeDisabled();
 });
+
+test("template download and Spanish tabular headers never auto-save", async ({
+  page,
+}) => {
+  let writes = 0;
+  await page.route("**/api/session", (r) => r.fulfill({ json: session }));
+  await page.route("**/api/imports**", (r) => {
+    if (r.request().method() !== "GET") writes++;
+    return r.fulfill({ json: { jobs: [] } });
+  });
+  await page.goto("/importar");
+  await expect(
+    page.getByRole("link", { name: "Descargar plantilla Excel", exact: true }),
+  ).toHaveAttribute("href", "/api/imports/template");
+  await page
+    .getByLabel("Pegar tabla con encabezados")
+    .fill("descripción\tfecha\timporte\tmoneda\nCena\t2026-10-30\t12.01\tPEN");
+  await page
+    .getByRole("button", { name: "Preparar datos pegados", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Descripción fila 1", { exact: true }),
+  ).toHaveValue("Cena");
+  await expect(page.getByLabel("Importe fila 1", { exact: true })).toHaveValue(
+    "12.01",
+  );
+  await expect(
+    page.getByLabel("He revisado fila 1", { exact: true }),
+  ).not.toBeChecked();
+  expect(writes).toBe(0);
+});

@@ -385,3 +385,8 @@ fieldset:disabled {
   margin: 0;
   color: #526257;
 }
+
+/* Let tabular imports scroll inside the viewport rather than widening mobile pages. */
+fieldset {
+  min-inline-size: 0;
+}

@@ -83,9 +83,11 @@ test("rechazo de servidor no muestra enlaces a participante", async ({
     r.fulfill({ status: 403, json: { error: "Acceso denegado." } }),
   );
   await page.goto("/administrar");
-  await expect(page.getByRole("alert")).toContainText(
-    "Se requiere un enlace administrativo",
-  );
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "No se pudo abrir la administración." }),
+  ).toContainText("Se requiere un enlace administrativo");
   await expect(
     page.getByRole("button", { name: "Renovar enlace" }),
   ).toHaveCount(0);

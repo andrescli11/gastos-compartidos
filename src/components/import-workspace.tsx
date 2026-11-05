@@ -370,9 +370,24 @@ export default function ImportWorkspace() {
     setReview(false);
     setConfirmed(false);
   }
-  function useTable(table: CsvTable, type: "csv" | "excel", sheet?: string) {
+  function applyTable(table: CsvTable, type: "csv" | "excel", sheet?: string) {
     if (!session) return;
-    const preview = csvCandidates(table, headers);
+    const first = table.rows[0]?.cells.map((cell) =>
+      cell.text.trim().toLowerCase(),
+    );
+    const templateHeaders =
+      first?.length === 4 &&
+      first.join("|") === "descripción|fecha|importe|moneda";
+    const mapping: CsvHeaderMap = templateHeaders
+      ? {
+          description: "descripción",
+          date: "fecha",
+          amount: "importe",
+          currency: "moneda",
+        }
+      : headers;
+    if (templateHeaders) setHeaders(mapping);
+    const preview = csvCandidates(table, mapping);
     const ids = session.participants.map((p) => p.id);
     const next = preview.candidates.map((candidate) => {
       const amount = candidate.amountMinor ?? "";
@@ -430,7 +445,7 @@ export default function ImportWorkspace() {
         const text = new TextDecoder("utf-8", { fatal: true }).decode(
           await file.arrayBuffer(),
         );
-        useTable(parseCsv(text, separator), "csv");
+        applyTable(parseCsv(text, separator), "csv");
         setSourceWarnings([]);
         setSheets([]);
       } else if (/\.xlsx$/i.test(file.name)) {
@@ -764,6 +779,18 @@ export default function ImportWorkspace() {
           {!job || job.state === "preview" ? (
             <section className="settlement">
               <h2>Preparar datos</h2>
+              <p>
+                <a
+                  href="/api/imports/template"
+                  download="plantilla-gastos-cusco.xlsx"
+                >
+                  Descargar plantilla Excel
+                </a>
+              </p>
+              <p>
+                Completa la hoja Gastos y cárgala aquí. Revisarás el reparto
+                antes de guardar. La plantilla incluye instrucciones.
+              </p>
               <fieldset disabled={locked || !!job || rows.length > 0}>
                 <p>
                   CSV (hasta 15 MB) se procesa en este navegador. Excel (hasta 4
@@ -845,7 +872,8 @@ export default function ImportWorkspace() {
                       onClick={() => {
                         try {
                           const sheet = sheets.find((s) => s.id === sheetId);
-                          if (sheet) useTable(sheet.table, "excel", sheet.name);
+                          if (sheet)
+                            applyTable(sheet.table, "excel", sheet.name);
                         } catch (cause) {
                           setError(
                             cause instanceof Error
@@ -876,7 +904,7 @@ export default function ImportWorkspace() {
                 <button
                   onClick={() => {
                     try {
-                      useTable(parseCsv(paste, "\t"), "csv");
+                      applyTable(parseCsv(paste, "\t"), "csv");
                       setSheets([]);
                     } catch (cause) {
                       setError(
@@ -918,7 +946,7 @@ export default function ImportWorkspace() {
                 Caducidad: {new Date(job.expiresAt).toLocaleString("es-PE")}
               </p>
             ) : null}
-            <fieldset disabled={locked}>
+            <fieldset disabled={locked} style={{ minWidth: 0 }}>
               <button disabled={rows.length >= 200} onClick={addRow}>
                 Añadir fila manual
               </button>
@@ -1054,21 +1082,21 @@ export default function ImportWorkspace() {
                       <div className="filters">
                         <label htmlFor={`payer-${row.id}`}>
                           Pagador fila {index + 1}
-                          <select
-                            id={`payer-${row.id}`}
-                            disabled={session.role !== "admin"}
-                            value={row.payerId}
-                            onChange={(e) =>
-                              change(row.id, { payerId: e.target.value })
-                            }
-                          >
-                            {session.participants.map((person) => (
-                              <option key={person.id} value={person.id}>
-                                {person.displayName}
-                              </option>
-                            ))}
-                          </select>
                         </label>
+                        <select
+                          id={`payer-${row.id}`}
+                          disabled={session.role !== "admin"}
+                          value={row.payerId}
+                          onChange={(e) =>
+                            change(row.id, { payerId: e.target.value })
+                          }
+                        >
+                          {session.participants.map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {person.displayName}
+                            </option>
+                          ))}
+                        </select>
                         <label className="person">
                           <span>Reparto personalizado fila {index + 1}</span>
                           <input

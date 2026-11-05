@@ -11,12 +11,14 @@ if ! command -v psql >/dev/null; then
   exit 1
 fi
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/roles.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/schema.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/access.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/payments.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/admin-access.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/imports.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/maintenance.sql"
+psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/security-remediation.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/persistence.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/access.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/payments.sql"

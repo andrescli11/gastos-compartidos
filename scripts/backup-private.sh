@@ -29,20 +29,34 @@ if [[ "${PGSSLMODE:-}" != "verify-full" ]]; then
   echo 'Backup requiere PGSSLMODE=verify-full y confianza TLS del proveedor.' >&2
   exit 1
 fi
-# Refuse to archive temporary evidence; the operator must explicitly finish or
-# cancel outstanding previews. This check never deletes or modifies their work.
-if ! pending_sources="$(psql -X --no-password -v ON_ERROR_STOP=1 -Atqc "select count(*) from app_private.import_jobs j where (j.state='preview' and jsonb_array_length(j.rows)>0) or exists(select 1 from jsonb_array_elements(j.rows) r where coalesce(r->>'evidence','')<>'')" 2>/dev/null)" || [[ "$pending_sources" != 0 ]]; then
-  echo 'Backup bloqueado: terminar o cancelar borradores con evidencia antes de exportar.' >&2
-  exit 1
-fi
+# Export one repeatable-read snapshot, so the evidence check and dump cannot race.
 diagnostics="$(mktemp)"
 complete=no
+snapshot_pid=""
 cleanup() {
+  if [[ -n "$snapshot_pid" ]]; then
+    kill "$snapshot_pid" 2>/dev/null || true
+    wait "$snapshot_pid" 2>/dev/null || true
+  fi
   rm -f -- "$diagnostics"
   if [[ "$complete" != yes ]]; then rm -f -- "$backup_path"; fi
 }
 trap cleanup EXIT
-if ! pg_dump --format=custom --no-owner --no-acl \
+coproc CUSCO_SNAPSHOT { psql -X --no-password -v ON_ERROR_STOP=1 -qAt 2>>"$diagnostics"; }
+snapshot_pid="$CUSCO_SNAPSHOT_PID"
+snapshot_read_fd="${CUSCO_SNAPSHOT[0]}"
+snapshot_write_fd="${CUSCO_SNAPSHOT[1]}"
+printf '%s\n' "begin isolation level repeatable read read only;" \
+  "select count(*) from app_private.import_jobs j where (j.state='preview' and jsonb_array_length(j.rows)>0) or exists(select 1 from jsonb_array_elements(j.rows) r where coalesce(r->>'evidence','')<>'');" \
+  "select pg_export_snapshot();" >&"$snapshot_write_fd"
+if ! read -r -t 15 pending_sources <&"$snapshot_read_fd" || [[ "$pending_sources" != 0 ]] || \
+  ! read -r -t 15 snapshot_id <&"$snapshot_read_fd" || \
+  [[ ! "$snapshot_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{8}-[0-9]+$ ]]; then
+  echo 'Backup bloqueado: terminar o cancelar borradores con evidencia, o verificar conexión.' >&2
+  exit 1
+fi
+if ! pg_dump --format=custom --no-owner --no-acl --enable-row-security --inserts \
+  --snapshot="$snapshot_id" \
   --schema=app_private --schema=app_api \
   --exclude-table-data=app_private.sessions \
   --exclude-table-data=app_private.rate_limits \
