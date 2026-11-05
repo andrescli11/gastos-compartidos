@@ -125,3 +125,7 @@ Una importación tiene versión privada, filas seleccionadas/revisadas y resulta
 ## ADR020 — Seguridad y recuperación operativa
 
 CSP con nonce por petición y render dinámico, caché privada en recorridos autenticados. Administración de accesos permite renovar/revocar con confirmación; la autorrotación administrativa se reserva al procedimiento de recuperación para no invalidar su propia operación antes de entregar el enlace. El backup financiero cifrado excluye sesiones/cuotas/comandos y se bloquea mientras existan borradores con evidencia temporal; no borra trabajo para poder exportar. Se ensaya restauración solo en la instancia efímera de CI existente, nunca sobre Supabase real.
+
+## ADR021 — Permisos futuros del rol de migración
+
+PostgreSQL concede EXECUTE a PUBLIC por defecto de forma global; un REVOKE por esquema no puede restar ese permiso global. La remediación y restauración revocan el default global de EXECUTE del rol de migración y conceden funciones de app_api explícitamente a cusco_bff. No modifica funciones existentes fuera de la app; una RPC nueva de ese propietario requiere grants explícitos. La prueba de restauración crea una función temporal y verifica que no es pública.

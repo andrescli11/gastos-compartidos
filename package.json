@@ -19,7 +19,7 @@
     "test:db": "bash scripts/test-db.sh",
     "init:local": "node scripts/init-local.mjs",
     "test:api": "node scripts/check-api.mjs && node scripts/check-payment-api.mjs",
-    "test:csv": "node scripts/check-csv.mjs && node scripts/check-excel.mjs && node scripts/check-excel-template.mjs",
+    "test:csv": "node scripts/check-csv.mjs && node scripts/check-excel.mjs && node scripts/check-excel-template.mjs && python3 scripts/check-backup-toc.py",
     "test:local": "npm run test:domain && npm run test:persistence && npm run test:api && npm run test:csv && npm run test:pending && npm run test:imports",
     "test:pending": "node scripts/check-pending.mjs",
     "test:payments": "node scripts/check-payments.mjs",

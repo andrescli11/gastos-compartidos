@@ -47,8 +47,17 @@ snapshot_pid="$CUSCO_SNAPSHOT_PID"
 snapshot_read_fd="${CUSCO_SNAPSHOT[0]}"
 snapshot_write_fd="${CUSCO_SNAPSHOT[1]}"
 printf '%s\n' "begin isolation level repeatable read read only;" \
-  "select count(*) from app_private.import_jobs j where (j.state='preview' and jsonb_array_length(j.rows)>0) or exists(select 1 from jsonb_array_elements(j.rows) r where coalesce(r->>'evidence','')<>'');" \
-  "select pg_export_snapshot();" >&"$snapshot_write_fd"
+  "select (to_regclass('app_private.import_jobs') is not null)::integer;" >&"$snapshot_write_fd"
+if ! read -r -t 15 has_imports <&"$snapshot_read_fd" || [[ ! "$has_imports" =~ ^[01]$ ]]; then
+  echo 'Backup bloqueado: no se pudo verificar el esquema.' >&2
+  exit 1
+fi
+if [[ "$has_imports" == 1 ]]; then
+  printf '%s\n' "select count(*) from app_private.import_jobs j where (j.state='preview' and jsonb_array_length(j.rows)>0) or exists(select 1 from jsonb_array_elements(j.rows) r where coalesce(r->>'evidence','')<>'');" >&"$snapshot_write_fd"
+else
+  printf '%s\n' 'select 0;' >&"$snapshot_write_fd"
+fi
+printf '%s\n' 'select pg_export_snapshot();' >&"$snapshot_write_fd"
 if ! read -r -t 15 pending_sources <&"$snapshot_read_fd" || [[ "$pending_sources" != 0 ]] || \
   ! read -r -t 15 snapshot_id <&"$snapshot_read_fd" || \
   [[ ! "$snapshot_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{8}-[0-9]+$ ]]; then
