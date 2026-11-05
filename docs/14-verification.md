@@ -12,7 +12,7 @@ Participante abre enlace privado → servidor canjea por cookie → consulta con
 - Se corrigieron patrones de carga React y etiquetas explícitas de selectores de pago, a partir de errores reales de lint/navegador.
 - Dependencias fijadas y lockfile incorporado. Audit sin críticos/altos; quedan8 avisos moderados transitivos del tooling TypeScript/ESLint relacionados con minimatch. No se ejecutó `audit fix --force`, que proponía un downgrade incompatible del framework de lint.
 
-## Nueva verificación HTTP real preparada
+## Verificación HTTP real aprobada
 
 El workflow Database compila e inicia Next en la misma VM que la base efímera. `scripts/check-http-flow.mjs` crea exclusivamente fixtures parametrizados en `cusco_test`, con tokens aleatorios que permanecen en memoria, y comprueba:
 
@@ -24,7 +24,7 @@ El workflow Database compila e inicia Next en la misma VM que la base efímera. 
 
 Errores solo indican fase y código HTTP, sin cuerpos, cookies, tokens ni detalles de conexión. Guards exigen CI, base desechable, host loopback y nombre/origen exactos de prueba. SSL solo se omite en loopback con flags explícitos de test/GitHubActions; en destinos remotos se mantiene validación del certificado.
 
-Pendiente ejecutar esta adición en CI. El cliente Node reenvía cookies manualmente: comprueba atributos y validación BFF, pero no demuestra comportamiento de cookies en un navegador HTTPS real. Las pruebas Playwright actuales interceptan respuestas privadas; la prueba HTTPS contra infraestructura desplegada sigue siendo necesaria antes de producción.
+Snapshot `2bf8e91d33b3342aa5c7b80f21066067808c7b6a`: workflow [Database aprobado](https://github.com/andrescli11/gastos-compartidos/actions/runs/42039447134), incluida la prueba HTTP real. Workflow [Quality aprobado](https://github.com/andrescli11/gastos-compartidos/actions/runs/42039447216): formato, lint, TypeScript, pruebas, build, navegador y audit. Los dos fallos anteriores de selector quedan resueltos. El cliente Node reenvía cookies manualmente: comprueba atributos y validación BFF, pero no demuestra comportamiento de cookies en un navegador HTTPS real. Las pruebas Playwright actuales interceptan respuestas privadas; la prueba HTTPS contra infraestructura desplegada sigue siendo necesaria antes de producción.
 
 ## Separación de entornos
 

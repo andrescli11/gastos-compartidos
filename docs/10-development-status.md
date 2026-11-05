@@ -77,3 +77,7 @@ La persistencia de jobs/ítems, transacción de confirmación, Storage/TTL físi
 - Snapshot de pagos `368d97d8f87e22c274b1a82258c457db7f0619cc`: Database APROBADO con nuevas tablas, fixtures y concurrencia real de pagos. Evidencia: https://github.com/andrescli11/gastos-compartidos/actions/runs/41982659229 .
 - Bootstrap resolvió/fijó dependencias y formateó código, pero la escritura desde Actions fue rechazada con403. Se reemplaza por exportación de artefacto de fuentes/lockfile con permisos solo lectura; el agente publicará el resultado usando la conexión GitHub autorizada. Los checks se ejecutan igualmente y conservan los fallos.
 - El resumen de la pantalla de gastos ahora deriva del mismo libro con pagos confirmados y configuración vigente; evita seguir proponiendo deudas ya pagadas. Regresión API local aprobada.
+
+## Actualización: integración validada en CI
+
+El commit `2bf8e91d33b3342aa5c7b80f21066067808c7b6a` aprueba Quality y Database, incluido HTTP real contra Next/PostgreSQL desechable: sesiones, gasto idempotente, pago confirmado, saldo y revocación. Pagos tiene SQL, API e interfaz integrados. Ver [evidencia y límites](14-verification.md). Los bloqueos históricos de instalación/build en este documento se resolvieron mediante CI; persisten configuración externa, importación masiva y gates de producción. No hay despliegue ni cambios en la base Supabase.

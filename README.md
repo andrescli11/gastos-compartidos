@@ -2,7 +2,7 @@
 
 MVP de uso único para cuadrar los gastos del viaje a Cusco por la despedida de Yácole.
 
-Este repositorio contiene el dominio financiero, la persistencia SQL y el código del flujo privado de acceso y gastos. Incluye transcripción CSV local con revisión. Todavía no se ha verificado el build ni la integración real con PostgreSQL/Supabase; no está desplegado.
+Este repositorio contiene acceso privado, gastos, pagos y liquidación con persistencia SQL y transcripción CSV local con revisión. El build y las pruebas PostgreSQL pasan en GitHub Actions. El flujo HTTP real contra PostgreSQL también pasa en CI; la app todavía no está desplegada. Consulta la [evidencia y sus límites](docs/14-verification.md).
 
 ## Documentos
 
@@ -21,9 +21,9 @@ Este repositorio contiene el dominio financiero, la persistencia SQL y el códig
 
 - Alcance del MVP: definido.
 - Stack y arquitectura: definidos.
-- Implementación: fundaciones y reparto en progreso; gates pendientes.
+- Implementación: gastos y pagos integrados; importación masiva y gates de producción pendientes.
 - Lista de participantes: pendiente.
-- Credenciales y red para Supabase, Vercel y OpenAI: pendientes.
+- Configuración de entornos Supabase/Vercel y credenciales de ejecución: pendientes.
 - Datos de evaluación de importaciones: pendientes.
 
 ## Principio rector
@@ -35,7 +35,7 @@ Resolver bien este viaje. No construir una plataforma comercial, gestión de mú
 Requiere Node.js 24 y npm. Una vez disponible la red:
 
 ```bash
-npm install --save-exact
+npm ci
 npm run dev
 ```
 
@@ -47,14 +47,14 @@ Verificación financiera sin descargar dependencias:
 npm run test:local
 ```
 
-Las comprobaciones completas y los bloqueos observados están en [estado de desarrollo](docs/10-development-status.md). No se ha validado aún el build.
+Las comprobaciones completas y los bloqueos observados están en [estado de desarrollo](docs/10-development-status.md). El build está validado en CI.
 
 ## Persistencia
 
-Esquema, autorización transaccional, contratos y pruebas: [guía de persistencia](db/README.md). Las pruebas del adaptador se ejecutan con `npm run test:persistence` sin instalar dependencias. La suite PostgreSQL y el despliegue siguen pendientes de ejecución.
+Esquema, autorización transaccional, contratos y pruebas: [guía de persistencia](db/README.md). Las pruebas del adaptador se ejecutan con `npm run test:persistence` sin instalar dependencias. La suite PostgreSQL pasa en CI; el despliegue sigue pendiente.
 
 El [checkpoint de integración](docs/11-integration-checkpoint.md) reúne el bloqueo del entorno y la configuración externa necesaria. `npm run init:local` genera configuración local privada sin sobrescribir archivos existentes.
 
 ## Avances verificables sin entorno externo
 
-`npm run test:payments` comprueba pagos y cierre; `npm run test:imports` comprueba revisión y confirmación por lote. Son dominios locales: persistencia/API/UI de estos dos bloques siguen pendientes. Detalles en [pagos](docs/12-offline-payment-domain.md) e [importaciones](docs/13-offline-import-workflow.md).
+`npm run test:payments` comprueba pagos y cierre; `npm run test:imports` comprueba revisión y confirmación por lote. Pagos ya tiene persistencia, API e interfaz. La importación por lote sigue en dominio local; faltan persistencia, API e interfaz para ese bloque. Detalles en [pagos](docs/12-offline-payment-domain.md) e [importaciones](docs/13-offline-import-workflow.md).
