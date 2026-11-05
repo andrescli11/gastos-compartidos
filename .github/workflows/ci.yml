@@ -5,18 +5,40 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
           cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
       - run: npm ci
+        id: dependencies
+      - name: Preserve formatter for the managed development environment
+        if: always() && steps.dependencies.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prettier-runtime
+          path: node_modules/prettier/
+          retention-days: 1
+          if-no-files-found: error
       - run: npm run format:check
+        if: always() && steps.dependencies.outcome == 'success'
       - run: npm run lint
+        if: always() && steps.dependencies.outcome == 'success'
       - run: npm run typecheck
+        if: always() && steps.dependencies.outcome == 'success'
       - run: npm test
+        if: always() && steps.dependencies.outcome == 'success'
       - run: npm run build
+        id: build
+        if: always() && steps.dependencies.outcome == 'success'
       - run: npx playwright install --with-deps chromium
+        id: browser
+        if: always() && steps.build.outcome == 'success'
       - run: npx playwright test
+        if: always() && steps.browser.outcome == 'success'
       - run: npm audit --audit-level=high
+        if: always() && steps.dependencies.outcome == 'success'

@@ -42,17 +42,17 @@ El navegador no recibe credenciales administrativas ni accede directamente a tab
 
 ## 4. Contrato de autorización
 
-| Acción | Participante | Administrador |
-| --- | --- | --- |
-| Leer gastos y balances | Todos | Todos |
-| Crear gasto | Solo con sí mismo como pagador | Cualquier pagador |
-| Editar/eliminar gasto | Solo si continúa siendo pagador | Cualquiera |
-| Cambiar pagador | No | Sí |
-| Cargar/revisar importación | Propia | Cualquiera |
-| Registrar pago | Si es emisor | Cualquiera |
-| Confirmar/rechazar pago | Si es receptor | Sí |
-| Configurar liquidación | No | Sí |
-| Revocar enlaces | No | Sí |
+| Acción                     | Participante                    | Administrador     |
+| -------------------------- | ------------------------------- | ----------------- |
+| Leer gastos y balances     | Todos                           | Todos             |
+| Crear gasto                | Solo con sí mismo como pagador  | Cualquier pagador |
+| Editar/eliminar gasto      | Solo si continúa siendo pagador | Cualquiera        |
+| Cambiar pagador            | No                              | Sí                |
+| Cargar/revisar importación | Propia                          | Cualquiera        |
+| Registrar pago             | Si es emisor                    | Cualquiera        |
+| Confirmar/rechazar pago    | Si es receptor                  | Sí                |
+| Configurar liquidación     | No                              | Sí                |
+| Revocar enlaces            | No                              | Sí                |
 
 La API obtiene la identidad de la sesión; nunca confía en un `participant_id`, rol o `trip_id` enviado por el cliente para decidir permisos. En actualizaciones verifica tanto el registro existente como el propuesto, para impedir apropiarse de un gasto ajeno cambiando su pagador.
 

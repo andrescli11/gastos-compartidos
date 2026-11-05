@@ -25,7 +25,7 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: local-ci-fixture-only
       PGDATABASE: cusco_test
-      CUSCO_DB_TEST_DISPOSABLE: 'yes'
+      CUSCO_DB_TEST_DISPOSABLE: "yes"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
