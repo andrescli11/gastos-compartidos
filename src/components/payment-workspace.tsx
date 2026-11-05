@@ -101,33 +101,34 @@ export default function PaymentWorkspace() {
           : "No se pudo conectar. Inténtalo de nuevo.",
       );
   }, []);
-  const load = useCallback(async () => {
-    try {
-      const [s, data] = await Promise.all([
+  const load = useCallback(
+    () =>
+      Promise.all([
         api<Session>("/api/session"),
         api<Snapshot>("/api/payments"),
-      ]);
-      const pending = await recoverPending<PaymentCommand>(
-        s.csrfToken,
-        sessionStorage,
-        "payments",
-      );
-      setSession(s);
-      setSnapshot(data);
-      setSender(s.participantId ?? s.participants[0]?.id ?? "");
-      setMode(data.context.configuration.mode);
-      if (data.context.configuration.mode === "consolidated")
-        setCurrency("PEN");
-      if (pending) {
-        setReview(pending);
-        setUncertain(true);
-      }
-    } catch (e) {
-      fail(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [fail]);
+      ])
+        .then(async ([s, data]) => {
+          const pending = await recoverPending<PaymentCommand>(
+            s.csrfToken,
+            sessionStorage,
+            "payments",
+          );
+          setSession(s);
+          setSnapshot(data);
+          setSender(s.participantId ?? s.participants[0]?.id ?? "");
+          setMode(data.context.configuration.mode);
+          if (data.context.configuration.mode === "consolidated") {
+            setCurrency("PEN");
+          }
+          if (pending) {
+            setReview(pending);
+            setUncertain(true);
+          }
+        })
+        .catch(fail)
+        .finally(() => setLoading(false)),
+    [fail],
+  );
   function reload() {
     setLoading(true);
     setSnapshot(null);
@@ -374,28 +375,28 @@ export default function PaymentWorkspace() {
           }}
         >
           <h2>Configuración de liquidación</h2>
-          <label>
-            Modo
-            <select
-              disabled={blocked || summary.configurationLocked}
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-            >
-              <option value="separate">Monedas separadas</option>
-              <option value="consolidated">Consolidar en PEN</option>
-            </select>
-          </label>
+          <label htmlFor="settlement-mode">Modo</label>
+          <select
+            id="settlement-mode"
+            disabled={blocked || summary.configurationLocked}
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
+          >
+            <option value="separate">Monedas separadas</option>
+            <option value="consolidated">Consolidar en PEN</option>
+          </select>
           {mode === "consolidated" && (
-            <label>
-              PEN por USD
+            <>
+              <label htmlFor="settlement-rate">PEN por USD</label>
               <input
+                id="settlement-rate"
                 disabled={blocked || summary.configurationLocked}
                 value={rate}
                 onChange={(e) => setRate(e.target.value)}
                 inputMode="decimal"
                 required
               />
-            </label>
+            </>
           )}
           <button
             disabled={
@@ -429,59 +430,55 @@ export default function PaymentWorkspace() {
         }}
       >
         <h2>Registrar pago externo</h2>
-        <label>
-          Emisor
-          <select
-            disabled={blocked || !admin}
-            value={sender}
-            onChange={(e) => setSender(e.target.value)}
-          >
-            {session.participants.map((p) => (
+        <label htmlFor="payment-sender">Emisor</label>
+        <select
+          id="payment-sender"
+          disabled={blocked || !admin}
+          value={sender}
+          onChange={(e) => setSender(e.target.value)}
+        >
+          {session.participants.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.displayName}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="payment-receiver">Receptor</label>
+        <select
+          id="payment-receiver"
+          disabled={blocked}
+          value={receiver}
+          onChange={(e) => setReceiver(e.target.value)}
+          required
+        >
+          <option value="">Selecciona receptor</option>
+          {session.participants
+            .filter((p) => p.id !== sender)
+            .map((p) => (
               <option key={p.id} value={p.id}>
                 {p.displayName}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Receptor
-          <select
-            disabled={blocked}
-            value={receiver}
-            onChange={(e) => setReceiver(e.target.value)}
-            required
-          >
-            <option value="">Selecciona receptor</option>
-            {session.participants
-              .filter((p) => p.id !== sender)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.displayName}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          Importe
-          <input
-            disabled={blocked}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
-            required
-          />
-        </label>
-        <label>
-          Moneda
-          <select
-            disabled={blocked}
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value as Currency)}
-          >
-            <option>PEN</option>
-            {context.configuration.mode === "separate" && <option>USD</option>}
-          </select>
-        </label>
+        </select>
+        <label htmlFor="payment-amount">Importe</label>
+        <input
+          id="payment-amount"
+          disabled={blocked}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          inputMode="decimal"
+          required
+        />
+        <label htmlFor="payment-currency">Moneda</label>
+        <select
+          id="payment-currency"
+          disabled={blocked}
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value as Currency)}
+        >
+          <option>PEN</option>
+          {context.configuration.mode === "separate" && <option>USD</option>}
+        </select>
         <p>
           Puede ser un pago parcial. El receptor debe confirmarlo para que
           afecte los saldos.

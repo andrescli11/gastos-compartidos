@@ -39,6 +39,15 @@ jobs:
         id: browser
         if: always() && steps.build.outcome == 'success'
       - run: npx playwright test
+        id: e2e
         if: always() && steps.browser.outcome == 'success'
       - run: npm audit --audit-level=high
         if: always() && steps.dependencies.outcome == 'success'
+      - name: Preserve synthetic browser failure context
+        if: always() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: browser-errors
+          path: test-results/**/error-context.md
+          retention-days: 1
+          if-no-files-found: ignore
