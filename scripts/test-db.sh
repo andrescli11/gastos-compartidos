@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Únicamente una base efímera VACÍA. No acepta una URL ni secretos como argumento.
+# La conexión utiliza las variables PG* del runner; no imprime sus valores.
+if [[ "${CUSCO_DB_TEST_DISPOSABLE:-}" != "yes" ]]; then
+  echo 'Prueba bloqueada: requiere CUSCO_DB_TEST_DISPOSABLE=yes y una base efímera vacía.' >&2
+  exit 1
+fi
+if ! command -v psql >/dev/null; then
+  echo 'PostgreSQL client (psql) no está instalado.' >&2
+  exit 1
+fi
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/schema.sql"
+psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/access.sql"
+psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/persistence.sql"
+psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/access.sql"
+node "$repo_dir/scripts/check-db-concurrency.mjs"

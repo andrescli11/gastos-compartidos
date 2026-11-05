@@ -1,0 +1,50 @@
+{
+  "name": "gastos-compartidos",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run && npm run test:local",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:money": "node scripts/check-money.mjs",
+    "test:settlement": "node scripts/check-settlement.mjs",
+    "test:authorization": "node scripts/check-authorization.mjs",
+    "test:domain": "npm run test:money && npm run test:settlement && npm run test:authorization && npm run test:payments",
+    "test:persistence": "node scripts/check-persistence-adapter.mjs",
+    "test:db": "bash scripts/test-db.sh",
+    "init:local": "node scripts/init-local.mjs",
+    "test:api": "node scripts/check-api.mjs",
+    "test:csv": "node scripts/check-csv.mjs",
+    "test:local": "npm run test:domain && npm run test:persistence && npm run test:api && npm run test:csv && npm run test:pending && npm run test:imports",
+    "test:pending": "node scripts/check-pending.mjs",
+    "test:payments": "node scripts/check-payments.mjs",
+    "test:imports": "node scripts/check-import-workflow.mjs && node scripts/check-csv-workflow.mjs"
+  },
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest",
+    "pg": "8.16.3",
+    "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "vitest": "latest",
+    "fast-check": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "prettier": "latest",
+    "@playwright/test": "latest",
+    "@types/pg": "8.15.5"
+  },
+  "type": "module"
+}
