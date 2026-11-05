@@ -40,3 +40,9 @@ La prueba de versión simula comandos concurrentes sobre un snapshot; NO demuest
 - Pruebas PostgreSQL de carrera de configuración/primera confirmación, doble confirmación y anulación; navegador y accesibilidad.
 
 No se declara Gate F superado. No se añadió un endpoint capaz de registrar pagos antes de disponer de estos controles.
+
+## Integración añadida después de publicar el primer snapshot
+
+La persistencia, el repositorio, las rutas y `/pagos` ya tienen implementación fuente. El runner de PostgreSQL incluye `payments.sql`, sus fixtures y carreras de registro/confirmación/configuración/anulación. `test:api` incluye el adaptador de pagos, sus contratos y privacidad de motivos. Estas adiciones deben pasar CI real antes de considerar Gate F.
+
+La confirmación SQL exige siempre la versión revisada del libro bloqueado. El BFF vuelve a leer/derivar el snapshot; las advertencias se muestran al receptor antes de confirmar. Reintentar una clave completada devuelve su resultado original, y la UI recarga el contexto actual tras éxito.

@@ -1,6 +1,7 @@
 import 'server-only';
 import { Pool } from 'pg';
 import { ExpenseRepository, PersistenceError, type SqlExecutor } from './expense-repository';
+import { PaymentRepository } from './payment-repository';
 import { AccessRepository } from './access-repository';
 let pool: Pool | undefined;
 /** Solo servidor. Login dedicado con membresía cusco_bff, nunca postgres/service_role. */
@@ -42,3 +43,5 @@ export function sqlExecutor(): SqlExecutor {
 
 export function expenseRepository(){return new ExpenseRepository(sqlExecutor());}
 export function accessRepository(){return new AccessRepository(sqlExecutor());}
+
+export function paymentRepository(){return new PaymentRepository(sqlExecutor());}

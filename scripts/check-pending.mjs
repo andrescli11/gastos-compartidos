@@ -14,3 +14,6 @@ assert.equal(await recoverPending(csrf,storage),null);
 await rememberPending(value,csrf,storage);forgetPending(storage);assert.equal(map.size,0);
 await assert.rejects(rememberPending(value,csrf,{...storage,setItem:()=>{throw new Error('Storage disabled');}}));
 console.log('OK: operación pendiente recuperable con la misma clave, cifrada por sesión y rechazada al alterar datos o cambiar sesión.');
+
+await rememberPending({key:value.key,command:{operation:"register",senderId:"a",receiverId:"b",amountMinor:"1",currency:"PEN",expectedLedgerVersion:0}},csrf,storage,"payments");
+assert.equal(await recoverPending(csrf,storage),null);assert.equal((await recoverPending(csrf,storage,"payments")).command.operation,"register");forgetPending(storage,"payments");

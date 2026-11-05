@@ -7,11 +7,11 @@ import type { CurrencySummary } from '@/domain/summary';
 import type { ExpenseCommand, ExpenseRecord } from '@/server/expense-repository';
 import type { SessionContext } from '@/server/access-repository';
 type Context=SessionContext & {csrfToken:string};
-class ApiError extends Error {status:number;constructor(message:string,status:number){super(message);this.status=status;}}
+class ApiError extends Error {status:number;code?:string;constructor(message:string,status:number,code?:string){super(message);this.status=status;this.code=code;}}
 async function api<T>(url:string,options:RequestInit={}):Promise<T>{
   const response=await fetch(url,{...options,credentials:'same-origin',cache:'no-store'});
   const data=await response.json();
-  if(!response.ok)throw new ApiError(typeof data.error==='string'?data.error:'No se pudo completar la operación.',response.status);
+  if(!response.ok)throw new ApiError(typeof data.error==='string'?data.error:'No se pudo completar la operación.',response.status,data.code);
   return data as T;
 }
 const decimal=(value:string)=>{const n=BigInt(value);return `${n/100n}.${(n%100n).toString().padStart(2,'0')}`;};
@@ -84,7 +84,7 @@ export default function ExpenseWorkspace(){
     }catch(error){
       if(!attempted){setMessage('No se pudo preparar la recuperación privada. No se envió esta solicitud.');}
       else if(!(error instanceof ApiError)||error.status>=500){setUncertain(true);setMessage('No se confirmó el resultado. Reintenta la misma operación para evitar duplicados.');}
-      else {if(!uncertain){try{forgetPending(window.sessionStorage);}catch{}}invalidate(error);}
+      else {if(!uncertain||error.code==='STALE_VERSION'){try{forgetPending(window.sessionStorage);}catch{}if(error.code==='STALE_VERSION'){setUncertain(false);setReview(null);setEditing(null);operationKey.current=null;try{const latest=await api<{expenses:ExpenseRecord[]}>('/api/expenses');setExpenses(latest.expenses);}catch{}}}invalidate(error);}
     }finally{setSaving(false);}
   }
   function useCsv(row:ReviewedCsvRow){
@@ -101,6 +101,7 @@ export default function ExpenseWorkspace(){
   const canManage=(e:ExpenseRecord)=>context.role==='admin'||e.payerId===context.participantId;
   return <main>
     <header><a className="brand" href="/">C / Cusco</a><button disabled={saving||uncertain} onClick={()=>void logout()}>Cerrar sesión</button></header>
+    <nav className="actions"><a href="/pagos">Pagos y cierre</a></nav>
     <section className="intro"><p className="eyebrow">GASTOS DEL VIAJE</p><h1>Todo en orden.</h1><p>{context.role==='admin'?'Administración':name(context.participantId??'')} · PEN y USD siempre por separado.</p></section>
     <p role="status" className={message?'notice':''}>{message}</p>
     {summary?<section className="summary-grid" aria-label="Resumen por moneda">{(['PEN','USD'] as const).map(c=><div className="summary-card" key={c}><p className="eyebrow">TOTAL {c}</p><strong>{formatMoney(BigInt(summary[c].totalMinor),c)}</strong>{context.participantId?<p>Tu saldo: {formatMoney(BigInt(summary[c].balances.find(b=>b.participantId===context.participantId)?.amountMinor??'0'),c)}</p>:null}</div>)}</section>:null}

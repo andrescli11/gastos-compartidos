@@ -1,3 +1,6 @@
+import { paymentConfirmationWarnings } from '../domain/payments.ts';
+import { summarizePaymentLedger } from '../domain/payment-summary.ts';
+import { paymentLedger, validatePaymentCommand, type PaymentRepository } from './payment-repository.ts';
 import { summarizeExpenses } from '../domain/summary.ts';
 import { PersistenceError, validateExpenseCommand, type ExpenseRepository } from './expense-repository.ts';
 import type { AccessRepository } from './access-repository.ts';
@@ -5,12 +8,12 @@ import { csrfToken, expiredSessionCookie, hashToken, ipQuotaHash, newToken, read
 import { errorResponse, HttpError, jsonResponse, readJson, requireOrigin } from './http.ts';
 type Access = Pick<AccessRepository,'quota'|'exchange'|'context'|'logout'|'revoke'>;
 type Expenses = Pick<ExpenseRepository,'list'|'mutate'>;
-export type ApiDependencies = { access: Access; expenses: Expenses; appUrl: string; rateSecret: string; vercel: boolean };
-export type Action='exchange'|'context'|'logout'|'list'|'mutate'|'revoke'|'summary';
+export type ApiDependencies = { access: Access; expenses: Expenses; payments?:Pick<PaymentRepository,'context'|'mutate'>; appUrl: string; rateSecret: string; vercel: boolean };
+export type Action='exchange'|'context'|'logout'|'list'|'mutate'|'revoke'|'summary'|'payments'|'paymentMutate';
 export function createApi(deps:ApiDependencies){
   return async function handle(request:Request,action:Action):Promise<Response>{
     try{
-      const mutation=['exchange','logout','mutate','revoke'].includes(action);
+      const mutation=['exchange','logout','mutate','revoke','paymentMutate'].includes(action);
       if(request.method!==(mutation?'POST':'GET'))throw new HttpError(405,'Método no permitido.');
       if(mutation)requireOrigin(request,deps.appUrl);
       else if(request.headers.get('sec-fetch-site')==='cross-site')throw new HttpError(403,'Solicitud no permitida.');
@@ -44,6 +47,22 @@ export function createApi(deps:ApiDependencies){
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||!('linkId' in body)||typeof body.linkId!=='string')throw new PersistenceError('INVALID_INPUT');
         await deps.access.revoke(session,body.linkId);
         return jsonResponse({ok:true});
+      }
+      if(action==='payments'){
+        if(!deps.payments)throw new PersistenceError('UNAVAILABLE');
+        const context=await deps.payments.context(session),ledger=paymentLedger(context);
+        const warnings=context.payments.filter(p=>p.state==='pending').map(p=>({paymentId:p.id,codes:paymentConfirmationWarnings(ledger,p.id)}));
+        return jsonResponse({context,summary:summarizePaymentLedger(ledger),warnings});
+      }
+      if(action==='paymentMutate'){
+        if(!deps.payments)throw new PersistenceError('UNAVAILABLE');
+        const command=await readJson(request);validatePaymentCommand(command);
+        const key=request.headers.get('idempotency-key');if(!key)throw new PersistenceError('INVALID_INPUT');
+        // Se vuelve a derivar el libro al confirmar. La función SQL bloquea el
+        // viaje y exige la misma versión revisada; un reintento durable puede
+        // devolver su resultado anterior incluso si el libro ya avanzó.
+        if(command.operation==='confirm')paymentLedger(await deps.payments.context(session));
+        return jsonResponse({context:await deps.payments.mutate(session,key,command)});
       }
       const body=await readJson(request);
       validateExpenseCommand(body);

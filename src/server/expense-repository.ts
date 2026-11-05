@@ -18,11 +18,11 @@ export type ExpenseCommand =
 export interface SqlExecutor {
   query(text: string, values: readonly unknown[]): Promise<{ rows: { result: unknown }[] }>;
 }
-type PersistenceCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'FORBIDDEN' | 'CONFLICT' | 'UNAVAILABLE' | 'RATE_LIMITED';
+type PersistenceCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'FORBIDDEN' | 'CONFLICT' | 'UNAVAILABLE' | 'RATE_LIMITED' | 'STALE_VERSION';
 export class PersistenceError extends Error {
   readonly code: PersistenceCode;
   constructor(code: PersistenceCode) {
-    super({ INVALID_INPUT:'Revisa los datos del gasto.', UNAUTHORIZED:'El enlace o la sesión ya no es válido.', FORBIDDEN:'No puedes modificar este gasto.', CONFLICT:'El gasto cambió o la operación entra en conflicto. Recarga antes de continuar.', UNAVAILABLE:'No se pudo completar la operación.', RATE_LIMITED:'Demasiadas solicitudes. Inténtalo en un minuto.' }[code]);
+    super({ INVALID_INPUT:'Revisa los datos de la operación.', UNAUTHORIZED:'El enlace o la sesión ya no es válido.', FORBIDDEN:'No puedes realizar esta acción.', CONFLICT:'Los datos cambiaron o la operación entra en conflicto. Recarga antes de continuar.', UNAVAILABLE:'No se pudo completar la operación.', RATE_LIMITED:'Demasiadas solicitudes. Inténtalo en un minuto.', STALE_VERSION:'Los datos cambiaron. Actualiza el libro y revisa la operación.' }[code]);
     this.name='PersistenceError';
     this.code=code;
   }
@@ -73,6 +73,7 @@ function safeFailure(error: unknown): never {
   const code=object(error) && typeof error.code==='string' ? error.code : '';
   if (code==='28000') throw new PersistenceError('UNAUTHORIZED');
   if (code==='42501') throw new PersistenceError('FORBIDDEN');
+  if(code==='40001'&&object(error)&&error.message==='expense_version_conflict')throw new PersistenceError('STALE_VERSION');
   if (['23505','40001','40P01'].includes(code)) throw new PersistenceError('CONFLICT');
   if (['22023','22P02','22007','22008','23514','23502','23503','22003'].includes(code)) throw new PersistenceError('INVALID_INPUT');
   // No conservar cause, SQL, payload, detail ni mensaje del driver.
@@ -99,3 +100,5 @@ export class ExpenseRepository {
     } catch(error) { return safeFailure(error); }
   }
 }
+
+export { record as parseExpenseRecord };

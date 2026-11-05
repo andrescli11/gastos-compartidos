@@ -99,3 +99,15 @@
 **Decisión:** conservar transferencias reales confirmadas, con advertencias y revisión explícita de la versión del libro cuando difieran del neto. No imponer una prohibición nueva de sobrepago. Confirmados alteran saldo; pendientes y rechazados no. Anulación administrativa conserva historial y motivo privado.
 
 **Consecuencias:** una transferencia real puede producir un saldo inverso explicable. La confirmación requiere la versión vigente y futura transacción SQL con lock del viaje; una función pura no demuestra aislamiento de base de datos. Configuración/tasa permanecen bloqueadas con pagos pendientes o confirmados; pendientes se resuelven por rechazo conforme a la máquina de estados existente.
+
+## ADR-016 — Verificación remota y bootstrap temporal en rama
+
+**Contexto:** el terminal no puede descargar dependencias, pero GitHub Actions sí puede ejecutar PostgreSQL y herramientas de Node.
+
+**Decisión:** publicar avances como PR de borrador y ejecutar comprobaciones en runners aislados. El bootstrap limitado al repositorio/rama de desarrollo genera el lockfile, fija dependencias y normaliza formato de archivos tracked; su token de escritura solo existe en el paso REST de commit, con comprobación de HEAD y sin force. No recibe secretos de aplicación ni escribe en main. Los checks siguen siendo obligatorios.
+
+**Consecuencias:** el commit creado por GITHUB_TOKEN no dispara por sí mismo otra ejecución; bootstrap valida su snapshot y debe comprobarse el estado del commit exacto antes de integrar. La configuración remota de Vercel/Supabase se inspecciona por sus herramientas y no se asume que el proyecto vacío sea un entorno de pruebas.
+
+## ADR-017 — Conflicto de versión distinguible de idempotencia
+
+**Decisión:** el BFF expone `STALE_VERSION` solo para mensajes SQL conocidos de versión monótona del libro/gasto/pago. Permite descartar un comando incierto que ya no puede aplicarse por versión y revisar sobre datos actuales. Un conflicto de idempotencia genérico no demuestra ausencia de escritura y mantiene la clave/diario.

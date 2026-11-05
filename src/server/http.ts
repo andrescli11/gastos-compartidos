@@ -1,3 +1,4 @@
+import { PaymentError } from '../domain/payments.ts';
 import { PersistenceError } from './expense-repository.ts';
 import { expiredSessionCookie } from './tokens.ts';
 export const privateHeaders={'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'};
@@ -10,9 +11,10 @@ export function jsonResponse(value:unknown,status=200,extra:Record<string,string
 }
 export function errorResponse(error:unknown) {
   if(error instanceof HttpError) return jsonResponse({error:error.message},error.status,error.status===429?{'Retry-After':'60'}:{});
+  if(error instanceof PaymentError)return jsonResponse({error:error.message},error.code==='FORBIDDEN'?403:error.code==='INVALID_INPUT'?400:409);
   if(error instanceof PersistenceError){
-    const status={INVALID_INPUT:400,UNAUTHORIZED:401,FORBIDDEN:403,CONFLICT:409,UNAVAILABLE:503,RATE_LIMITED:429}[error.code];
-    return jsonResponse({error:error.message},status,status===401?{'Set-Cookie':expiredSessionCookie}:status===429?{'Retry-After':'60'}:{});
+    const status={INVALID_INPUT:400,UNAUTHORIZED:401,FORBIDDEN:403,CONFLICT:409,UNAVAILABLE:503,RATE_LIMITED:429,STALE_VERSION:409}[error.code];
+    return jsonResponse({error:error.message,...(error.code==='STALE_VERSION'?{code:'STALE_VERSION'}:{})},status,status===401?{'Set-Cookie':expiredSessionCookie}:status===429?{'Retry-After':'60'}:{});
   }
   return jsonResponse({error:'No se pudo completar la operación.'},503);
 }

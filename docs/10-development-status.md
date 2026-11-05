@@ -63,3 +63,13 @@ Se añadió dominio de revisión privada y confirmación de importaciones: propi
 `npm run test:imports` ejecuta la máquina de estados y un recorrido CSV→revisión→confirmación→resultado parcial→reintento, sin escrituras reales. Revisión independiente favorable tras corregir limpieza terminal y comparación canónica de recibos. No hay nuevos servicios ni credenciales requeridas para estas pruebas.
 
 La persistencia de jobs/ítems, transacción de confirmación, Storage/TTL físico y UI masiva siguen pendientes. `13-offline-import-workflow.md` detalla contratos y límites. Gate D no superado.
+
+## Publicación GitHub e integración de pagos — 2026-11-05
+
+- Primer avance publicado en `feat/foundations-money`, commit `1ae4d92f6ce0ba3e1a6786cb00cc0983329e8429`, PR de borrador #1. Main no se modificó.
+- GitHub Actions ejecutó PostgreSQL 17: workflow Database del snapshot inicial APROBADO, incluidas persistencia, acceso y concurrencia de gastos. Evidencia: https://github.com/andrescli11/gastos-compartidos/actions/runs/41978816321 . Esta ejecución no incluye las adiciones posteriores de pagos.
+- Quality inicial falló por ausencia de lockfile. Se prepara bootstrap restringido a la rama para resolver dependencias sin lifecycle scripts, fijar versiones, formatear fuentes ya tracked y publicar lockfile/normalización con permisos temporales mínimos. Después ejecuta los checks completos; no altera producción.
+- Nuevo código de pagos integrado: `db/payments.sql`, fixtures SQL, contexto consistente, mutaciones autorizadas/idempotentes, lock del viaje, elección administrativa, configuración bloqueada, razones de anulación solo para admin; repositorio y rutas HTTP con importes strings y CSRF; pantalla `/pagos` con revisión, advertencias y recuperación cifrada separada.
+- Contratos de API y namespace de recuperación probados localmente. Se añadieron pruebas PostgreSQL concurrentes de registro/reintento, confirmación frente a cambio de configuración, auditoría única y anulación repetida; se ejecutarán en CI con el nuevo snapshot.
+- Un rechazo SQL de versión obsoleta se identifica como `STALE_VERSION`, distinto de un conflicto de clave/payload. Dado el contador monótono y el lookup de idempotencia previo, permite liberar una operación incierta y revisar sobre el libro actual. Conflictos genéricos y límites siguen conservando la incertidumbre.
+- Conexiones de herramientas GitHub/Supabase/Vercel disponibles. Se encontró proyecto Supabase `app-gastos-compartidos`; inspección de public/app_private/app_api sin tablas. No se escribió en el proyecto ni se asumió que sea desarrollo. Vercel no devolvió proyectos Git enlazados en el equipo consultado; no se creó despliegue.
