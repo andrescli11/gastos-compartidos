@@ -77,3 +77,30 @@ assert.equal(
   "register",
 );
 forgetPending(storage, "payments");
+
+const importPending = {
+  key: crypto.randomUUID(),
+  command: {
+    operation: "confirm",
+    id: crypto.randomUUID(),
+    expectedVersion: 4,
+  },
+};
+await rememberPending(importPending, csrf, storage, "imports");
+assert.deepEqual(await recoverPending(csrf, storage, "imports"), importPending);
+assert.equal(await recoverPending(csrf, storage, "payments"), null);
+assert.equal(await recoverPending(csrf, storage), null);
+assert.ok(
+  ![...map.values()].some((value) => value.includes(importPending.command.id)),
+);
+forgetPending(storage, "imports");
+assert.equal(await recoverPending(csrf, storage, "imports"), null);
+
+const accessPending = {
+  key: crypto.randomUUID(),
+  command: { operation: "revoke", linkId: crypto.randomUUID() },
+};
+await rememberPending(accessPending, csrf, storage, "access");
+assert.deepEqual(await recoverPending(csrf, storage, "access"), accessPending);
+assert.equal(await recoverPending(csrf, storage, "imports"), null);
+forgetPending(storage, "access");

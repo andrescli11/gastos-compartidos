@@ -1,11 +1,15 @@
 import type { ExpenseCommand } from "../server/expense-repository.ts";
 export type PendingOperation<T = ExpenseCommand> = { key: string; command: T };
-export type PendingScope = "expenses" | "payments";
+export type PendingScope = "expenses" | "payments" | "imports" | "access";
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 function storageName(scope: PendingScope) {
-  return scope === "payments"
-    ? "cusco.pending.payments.v1"
-    : "cusco.pending.v1";
+  return scope === "access"
+    ? "cusco.pending.access.v1"
+    : scope === "imports"
+      ? "cusco.pending.imports.v1"
+      : scope === "payments"
+        ? "cusco.pending.payments.v1"
+        : "cusco.pending.v1";
 }
 const encoder = new TextEncoder();
 function encode(bytes: Uint8Array) {
@@ -95,9 +99,13 @@ export async function recoverPending<T = ExpenseCommand>(
       value.key.length !== 36 ||
       !value.command ||
       !(
-        scope === "payments"
-          ? ["register", "confirm", "reject", "void", "configure"]
-          : ["create", "update", "void"]
+        scope === "access"
+          ? ["rotate", "revoke"]
+          : scope === "imports"
+            ? ["confirm"]
+            : scope === "payments"
+              ? ["register", "confirm", "reject", "void", "configure"]
+              : ["create", "update", "void"]
       ).includes(value.command.operation)
     )
       throw new Error();

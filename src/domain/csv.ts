@@ -15,6 +15,8 @@ export type CsvCell = {
   columnIndex: number;
   text: string;
   literal: string;
+  /** Excel formula present; cached text only, never evaluated. */
+  formula?: boolean;
 };
 export type CsvRow = { row: number; cells: CsvCell[] };
 export type CsvTable = {
@@ -300,7 +302,9 @@ export function csvCandidates(
         : null;
     if (currency === null) warnings.push("UNKNOWN_CURRENCY");
     // Solo señalización: no ejecutar ni eliminar texto. Incluye columnas no mapeadas.
-    if (row.cells.some((cell) => /^[\s]*[=+\-@]/.test(cell.text)))
+    if (
+      row.cells.some((cell) => cell.formula || /^[\s]*[=+\-@]/.test(cell.text))
+    )
       warnings.push("FORMULA_LIKE_CONTENT");
     return {
       sourceRow: row.row,

@@ -113,3 +113,15 @@
 **Decisión:** el BFF expone `STALE_VERSION` solo para mensajes SQL conocidos de versión monótona del libro/gasto/pago. Permite descartar un comando incierto que ya no puede aplicarse por versión y revisar sobre datos actuales. Un conflicto de idempotencia genérico no demuestra ausencia de escritura y mantiene la clave/diario.
 
 **Actualización ADR-016:** el token de Actions recibió403 al escribir el resultado. El bootstrap pasa a permisos de lectura y entrega un artefacto de fuentes normalizadas/lockfile, con exclusión de secretos. La publicación se realiza mediante la conexión GitHub autorizada, conservando revisión y lease del HEAD. No se pide ampliar permisos del repositorio ni se ocultan checks fallidos.
+
+## ADR018 — Importación determinística sin retener originales
+
+CSV se procesa en el navegador; Excel .xlsx se parsea en memoria en el BFF y se descarta inmediatamente. No se carga ningún original a Storage. Los borradores privados conservan solo evidencia de celdas acotada durante siete días; confirmar/cancelar elimina la evidencia. Esto reduce exposición y evita credenciales de Storage amplias. CSV admite15MB y Excel4MB para respetar el techo de petición de Vercel; archivos activos/macros/protegidos se rechazan. El lector OOXML conservador preserva literales decimales y usa límites ZIP/XML, en lugar de transformar importes con coma flotante. IA deshabilitada según GateE.
+
+## ADR019 — Confirmación de lotes y procedencia
+
+Una importación tiene versión privada, filas seleccionadas/revisadas y resultados por fila. SQL confirma exactamente la revisión almacenada, revalida sesión/pagador/duplicados y usa identidad estable trabajo+fila. Éxitos no se repiten; fallos se corrigen y reintentan. La procedencia mínima sobrevive al borrado de la evidencia temporal. El servidor recalcula advertencias de fechas y duplicados; el usuario reconoce cada fila y mantiene ambos explícitamente si corresponde.
+
+## ADR020 — Seguridad y recuperación operativa
+
+CSP con nonce por petición y render dinámico, caché privada en recorridos autenticados. Administración de accesos permite renovar/revocar con confirmación; la autorrotación administrativa se reserva al procedimiento de recuperación para no invalidar su propia operación antes de entregar el enlace. El backup financiero cifrado excluye sesiones/cuotas/comandos y se bloquea mientras existan borradores con evidencia temporal; no borra trabajo para poder exportar. Se ensaya restauración solo en la instancia efímera de CI existente, nunca sobre Supabase real.

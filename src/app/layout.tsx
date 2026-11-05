@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+// Every rendered document needs a fresh CSP nonce, including link entry pages.
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Cusco · Gastos compartidos",
   description: "Revisa el reparto de los gastos del viaje a Cusco.",

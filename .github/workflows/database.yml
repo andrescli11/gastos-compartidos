@@ -40,7 +40,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: bash scripts/test-db.sh
+      - run: bash scripts/check-backup-restore.sh
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
       - name: Verify real HTTP and database flow
         shell: bash
         run: |
@@ -65,3 +67,4 @@ jobs:
           }
           NODE
           node scripts/check-http-flow.mjs
+          node scripts/check-browser-flow.mjs

@@ -410,6 +410,10 @@ export default function ExpenseWorkspace() {
       </header>
       <nav className="actions">
         <Link href="/pagos">Pagos y cierre</Link>
+        <Link href="/importar">Importar varios gastos</Link>
+        {context.role === "admin" ? (
+          <Link href="/administrar">Administrar accesos</Link>
+        ) : null}
       </nav>
       <section className="intro">
         <p className="eyebrow">GASTOS DEL VIAJE</p>
