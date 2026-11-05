@@ -2,7 +2,7 @@
 
 MVP de uso único para cuadrar los gastos del viaje a Cusco por la despedida de Yácole.
 
-Este repositorio contiene acceso privado, gastos, pagos y liquidación con persistencia SQL y transcripción CSV local con revisión. El build y las pruebas PostgreSQL pasan en GitHub Actions. El flujo HTTP real contra PostgreSQL también pasa en CI; la app todavía no está desplegada. Consulta la [evidencia y sus límites](docs/14-verification.md).
+Este repositorio contiene acceso privado, gastos, pagos y liquidación con persistencia SQL y transcripción CSV local con revisión. El build y las pruebas PostgreSQL pasan en GitHub Actions. El flujo HTTP real contra PostgreSQL también pasa en CI. Hay una publicación en Vercel y el esquema ya está aplicado en Supabase real; la conexión runtime aún está pendiente. Consulta el [estado de conexión](docs/15-live-supabase.md). Consulta la [evidencia y sus límites](docs/14-verification.md).
 
 ## Documentos
 

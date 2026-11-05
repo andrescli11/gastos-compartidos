@@ -28,4 +28,4 @@ Snapshot `2bf8e91d33b3342aa5c7b80f21066067808c7b6a`: workflow [Database aprobado
 
 ## Separación de entornos
 
-No se ejecutaron migraciones ni fixtures en el proyecto Supabase existente. La inspección disponible no establece que sea desarrollo. No se creó ni promovió un despliegue Vercel. Main permanece sin cambios y el trabajo está en PR de borrador.
+Esta evidencia de CI no utilizó Supabase real. Posteriormente se publicó Vercel y, con autorización explícita del propietario para usar la base existente, se aplicó la migración inicial sin fixtures. La conexión runtime está pendiente; ver [estado real](15-live-supabase.md). Main permanece sin cambios y el trabajo está en PR de borrador.
