@@ -1,5 +1,6 @@
 // Browser → Next → PostgreSQL. Never run against a remote or real database.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 let browser;
 let database;
@@ -260,6 +261,151 @@ try {
     assert(links.links.some((link) => link.displayName === a.name));
     assert(links.links.some((link) => link.displayName === b.name));
     assert(!JSON.stringify(links).includes(a.token));
+    stage = "Excel template download";
+    await aBrowser.page.goto(`${base}/importar`);
+    await aBrowser.page
+      .getByRole("link", { name: "Descargar plantilla Excel", exact: true })
+      .waitFor();
+    const template = await aBrowser.page.request.get(
+      `${base}/api/imports/template`,
+    );
+    assert.equal(template.status(), 200);
+    assert.match(
+      template.headers()["content-disposition"],
+      /plantilla-gastos-cusco\.xlsx/,
+    );
+    const importedDescription = `Browser Excel ${suffix}`;
+    const filled = spawnSync(
+      "python3",
+      [
+        "-c",
+        `
+import io,sys,zipfile,xml.etree.ElementTree as E
+ns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+E.register_namespace("",ns)
+source=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read()))
+out=io.BytesIO()
+with zipfile.ZipFile(out,"w",compression=zipfile.ZIP_STORED) as dest:
+ for entry in source.infolist():
+  data=source.read(entry.filename)
+  if entry.filename=="xl/worksheets/sheet1.xml":
+   root=E.fromstring(data)
+   for col,text in zip("ABCD",[sys.argv[1],"2026-10-30",sys.argv[2],"PEN"]):
+    cell=root.find(".//{%s}c[@r='%s2']"%(ns,col))
+    cell.find("{%s}is/{%s}t"%(ns,ns)).text=text
+   data=E.tostring(root,encoding="utf-8",xml_declaration=True)
+  dest.writestr(entry.filename,data)
+sys.stdout.buffer.write(out.getvalue())
+`,
+        importedDescription,
+        viewport.width === 390 ? "1.04" : "1.03",
+      ],
+      { input: await template.body(), maxBuffer: 1024 * 1024 },
+    );
+    assert.equal(filled.status, 0);
+    stage = "Excel source upload and review";
+    const sourceReply = aBrowser.page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/imports/source" &&
+        r.request().method() === "POST",
+    );
+    await aBrowser.page
+      .getByLabel("Archivo CSV o Excel", { exact: true })
+      .setInputFiles({
+        name: "gastos.xlsx",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        buffer: filled.stdout,
+      });
+    assert.equal((await sourceReply).status(), 200);
+    await aBrowser.page
+      .getByRole("button", { name: "Preparar hoja seleccionada", exact: true })
+      .click();
+    await aBrowser.page
+      .getByLabel("Descripción fila 1", { exact: true })
+      .waitFor();
+    assert.equal(
+      await aBrowser.page
+        .getByLabel("Descripción fila 1", { exact: true })
+        .inputValue(),
+      importedDescription,
+    );
+    await aBrowser.page
+      .getByLabel("Seleccionar fila 1", { exact: true })
+      .check();
+    await command(aBrowser.page, "/api/imports", () =>
+      aBrowser.page
+        .getByRole("button", { name: "Guardar borrador privado", exact: true })
+        .click(),
+    );
+    assert.equal(
+      (await browserJson(aBrowser.page, "/api/expenses")).expenses.filter(
+        (e) => e.description === importedDescription,
+      ).length,
+      0,
+    );
+    await aBrowser.page
+      .getByLabel("He revisado fila 1", { exact: true })
+      .check();
+    await command(aBrowser.page, "/api/imports", () =>
+      aBrowser.page
+        .getByRole("button", { name: "Revisar selección", exact: true })
+        .click(),
+    );
+    await aBrowser.page
+      .getByLabel(
+        "Confirmo incorporar estas filas revisadas al libro del viaje.",
+        { exact: true },
+      )
+      .check();
+    const confirmReply = aBrowser.page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/imports" &&
+        r.request().method() === "POST",
+    );
+    await aBrowser.page
+      .getByRole("button", {
+        name: "Confirmar gastos seleccionados",
+        exact: true,
+      })
+      .click();
+    const confirmation = await confirmReply;
+    assert.equal(confirmation.status(), 200);
+    const confirmed = await confirmation.json();
+    assert.equal(
+      confirmed.job.results.filter((r) => r.status === "persisted").length,
+      1,
+    );
+    stage = "Excel confirmation idempotency";
+    const confirmRequest = confirmation.request();
+    const sessionData = await browserJson(aBrowser.page, "/api/session");
+    const replayStatus = await aBrowser.page.evaluate(
+      async (data) => {
+        const r = await fetch("/api/imports", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": data.csrf,
+            "Idempotency-Key": data.key,
+          },
+          body: data.body,
+        });
+        return r.status;
+      },
+      {
+        csrf: sessionData.csrfToken,
+        key: confirmRequest.headers()["idempotency-key"],
+        body: confirmRequest.postData(),
+      },
+    );
+    assert.equal(replayStatus, 200);
+    assert.equal(
+      (await browserJson(aBrowser.page, "/api/expenses")).expenses.filter(
+        (e) => e.description === importedDescription,
+      ).length,
+      1,
+    );
+
     for (const opened of [adminBrowser, aBrowser, bBrowser])
       await opened.context.close();
   }
