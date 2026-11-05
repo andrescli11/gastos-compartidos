@@ -36,5 +36,7 @@ const read=await handler(request(),'payments');assert.equal(read.status,200);ass
 assert.equal((await handler(request('POST',cmd),'paymentMutate')).status,200);assert.equal(writes,1);
 assert.equal((await handler(request('POST',cmd,{'X-CSRF-Token':''}),'paymentMutate')).status,403);assert.equal(writes,1);
 assert.equal((await handler(request('POST',{operation:'confirm',id,expectedPaymentVersion:1,expectedLedgerVersion:0,reviewedLedgerVersion:0}),'paymentMutate')).status,200);assert.equal(reads,2);
+context.payments.push({...voided,state:'confirmed',version:2,voidedBy:null});
+const settled=await (await handler(request(),'summary')).json();assert.equal(settled.includesPayments,true);assert.equal(settled.summary.PEN.transfers.length,0);assert.equal(settled.summary.PEN.totalMinor,'100');
 const stale=new PaymentRepository({query:async()=>{throw{code:'40001',message:'ledger_version_conflict',detail:'PRIVATE'};}});await assert.rejects(stale.context(token),e=>e.code==='STALE_VERSION');
 console.log('OK: pagos API/SQL parametrizados, contratos monetarios, versiones revisadas, motivo privado, CSRF y resumen con saldo vigente.');

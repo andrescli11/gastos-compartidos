@@ -7,6 +7,7 @@ import type { CurrencySummary } from '@/domain/summary';
 import type { ExpenseCommand, ExpenseRecord } from '@/server/expense-repository';
 import type { SessionContext } from '@/server/access-repository';
 type Context=SessionContext & {csrfToken:string};
+type SummaryResponse={summary:Record<Currency,CurrencySummary>;settlementMode?:'separate'|'consolidated'};
 class ApiError extends Error {status:number;code?:string;constructor(message:string,status:number,code?:string){super(message);this.status=status;this.code=code;}}
 async function api<T>(url:string,options:RequestInit={}):Promise<T>{
   const response=await fetch(url,{...options,credentials:'same-origin',cache:'no-store'});
@@ -18,6 +19,7 @@ const decimal=(value:string)=>{const n=BigInt(value);return `${n/100n}.${(n%100n
 export default function ExpenseWorkspace(){
   const [context,setContext]=useState<Context|null>(null),[expenses,setExpenses]=useState<ExpenseRecord[]>([]);
   const [summary,setSummary]=useState<Record<Currency,CurrencySummary>|null>(null);
+  const [settlementMode,setSettlementMode]=useState<'separate'|'consolidated'>('separate');
   const [loading,setLoading]=useState(true),[message,setMessage]=useState(''),[fatal,setFatal]=useState('');
   const [description,setDescription]=useState(''),[date,setDate]=useState(''),[amount,setAmount]=useState(''),[currency,setCurrency]=useState<Currency>('PEN');
   const [payer,setPayer]=useState(''),[selected,setSelected]=useState<string[]>([]),[custom,setCustom]=useState(false),[parts,setParts]=useState<Record<string,string>>({});
@@ -42,7 +44,7 @@ export default function ExpenseWorkspace(){
           const command=pending.command;setDescription(command.description);setDate(command.spentOn);setCurrency(command.currency);setPayer(command.payerId);setAmount(decimal(command.amountMinor));setSelected(command.splits.map(s=>s.participantId));setCustom(true);setParts(Object.fromEntries(command.splits.map(s=>[s.participantId,decimal(s.amountMinor)])));
         }
       }
-      return api<{summary:Record<Currency,CurrencySummary>}>('/api/summary').then(data=>{if(!abortRef.current)setSummary(data.summary);});
+      return api<SummaryResponse>('/api/summary').then(data=>{if(!abortRef.current){setSummary(data.summary);setSettlementMode(data.settlementMode??'separate');}});
     }).catch(error=>{if(!abortRef.current){setContext(null);setExpenses([]);setFatal(error instanceof Error?error.message:'No se pudo conectar.');}}).finally(()=>{if(!abortRef.current)setLoading(false);});
     return ()=>{abortRef.current=true;};
   },[]);
@@ -80,7 +82,7 @@ export default function ExpenseWorkspace(){
       setExpenses(current=>result.expense.state==='voided'?current.filter(e=>e.id!==result.expense.id):[result.expense,...current.filter(e=>e.id!==result.expense.id)]);
       try{forgetPending(window.sessionStorage);}catch{}
       setSummary(null);resetForm();setMessage('Gasto guardado.');
-      try{const data=await api<{summary:Record<Currency,CurrencySummary>}>('/api/summary');setSummary(data.summary);}catch(error){invalidate(error);}
+      try{const data=await api<SummaryResponse>('/api/summary');setSummary(data.summary);setSettlementMode(data.settlementMode??'separate');}catch(error){invalidate(error);}
     }catch(error){
       if(!attempted){setMessage('No se pudo preparar la recuperación privada. No se envió esta solicitud.');}
       else if(!(error instanceof ApiError)||error.status>=500){setUncertain(true);setMessage('No se confirmó el resultado. Reintenta la misma operación para evitar duplicados.');}
@@ -102,7 +104,7 @@ export default function ExpenseWorkspace(){
   return <main>
     <header><a className="brand" href="/">C / Cusco</a><button disabled={saving||uncertain} onClick={()=>void logout()}>Cerrar sesión</button></header>
     <nav className="actions"><a href="/pagos">Pagos y cierre</a></nav>
-    <section className="intro"><p className="eyebrow">GASTOS DEL VIAJE</p><h1>Todo en orden.</h1><p>{context.role==='admin'?'Administración':name(context.participantId??'')} · PEN y USD siempre por separado.</p></section>
+    <section className="intro"><p className="eyebrow">GASTOS DEL VIAJE</p><h1>Todo en orden.</h1><p>{context.role==='admin'?'Administración':name(context.participantId??'')} · {settlementMode==='consolidated'?'Liquidación consolidada en PEN.':'Liquidación separada en PEN y USD.'}</p></section>
     <p role="status" className={message?'notice':''}>{message}</p>
     {summary?<section className="summary-grid" aria-label="Resumen por moneda">{(['PEN','USD'] as const).map(c=><div className="summary-card" key={c}><p className="eyebrow">TOTAL {c}</p><strong>{formatMoney(BigInt(summary[c].totalMinor),c)}</strong>{context.participantId?<p>Tu saldo: {formatMoney(BigInt(summary[c].balances.find(b=>b.participantId===context.participantId)?.amountMinor??'0'),c)}</p>:null}</div>)}</section>:null}
     <section className="workspace" aria-labelledby="form-title"><div className="editor"><h2 id="form-title">{editing?'Editar gasto':'Registrar un gasto'}</h2>
@@ -121,7 +123,7 @@ export default function ExpenseWorkspace(){
     <section className="settlement" aria-labelledby="list-title"><h2 id="list-title">Gastos registrados</h2><div className="filters"><label>Buscar<input value={search} onChange={e=>setSearch(e.target.value)}/></label><label>Moneda<select value={filterCurrency} onChange={e=>setFilterCurrency(e.target.value)}><option value="">Todas</option><option>PEN</option><option>USD</option></select></label><label>Pagador<select value={filterPayer} onChange={e=>setFilterPayer(e.target.value)}><option value="">Todos</option>{context.participants.map(p=><option key={p.id} value={p.id}>{p.displayName}</option>)}</select></label><label>Desde<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Hasta<input type="date" value={until} onChange={e=>setUntil(e.target.value)}/></label></div>
       {!expenses.length?<p>El viaje todavía no tiene gastos. Registra el primero.</p>:!filtered.length?<p>No hay gastos con estos filtros.</p>:filtered.map(e=><article className="expense-card" key={e.id}><div><h3>{e.description}</h3><p>{e.spentOn} · Pagó {name(e.payerId)} · Origen: {({manual:'manual',bulk:'registro masivo',csv:'CSV',excel:'Excel',image:'imagen'})[e.source]}</p><strong>{formatMoney(BigInt(e.amountMinor),e.currency)}</strong></div><details><summary>Ver reparto</summary><ul>{e.splits.map(s=><li key={s.participantId}><span>{name(s.participantId)}</span><strong>{formatMoney(BigInt(s.amountMinor),e.currency)}</strong></li>)}</ul></details>{canManage(e)?<div className="actions"><button disabled={!!review} onClick={()=>edit(e)}>Editar</button><button disabled={!!review} onClick={()=>{setReview({operation:'void',id:e.id,expectedVersion:e.version});operationKey.current=crypto.randomUUID();setMessage('');}}>Anular</button></div>:null}</article>)}
     </section>
-    {summary?<section className="settlement"><h2>Propuesta de devoluciones</h2><p>Calculada desde gastos. Todavía no registra pagos.</p>{(['PEN','USD'] as const).map(c=><div key={c}><h3>{c} · {summary[c].minimumProven?'Mínimo probado':'Propuesta optimizada'}</h3>{!summary[c].transfers.length?<p>Sin transferencias pendientes en esta moneda.</p>:<ul>{summary[c].transfers.map(t=><li key={t.senderId+t.receiverId}><span>{name(t.senderId)} → {name(t.receiverId)}</span><strong>{formatMoney(BigInt(t.amountMinor),c)}</strong></li>)}</ul>}</div>)}</section>:null}
+    {summary?<section className="settlement"><h2>Propuesta de devoluciones</h2><p>Calculada desde gastos y pagos confirmados. Revisa el detalle en Pagos y cierre.</p>{(['PEN','USD'] as const).map(c=><div key={c}><h3>{c} · {summary[c].minimumProven?'Mínimo probado':'Propuesta optimizada'}</h3>{!summary[c].transfers.length?<p>Sin transferencias pendientes en esta moneda.</p>:<ul>{summary[c].transfers.map(t=><li key={t.senderId+t.receiverId}><span>{name(t.senderId)} → {name(t.receiverId)}</span><strong>{formatMoney(BigInt(t.amountMinor),c)}</strong></li>)}</ul>}</div>)}</section>:null}
     <CsvReview onUse={useCsv} disabled={!!review||saving}/>
     <footer>CUSCO · CUENTAS CLARAS</footer>
   </main>;

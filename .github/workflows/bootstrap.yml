@@ -1,4 +1,4 @@
-name: Bootstrap dependency lock
+name: Bootstrap source snapshot
 on:
   push:
     branches: [feat/foundations-money]
@@ -15,7 +15,7 @@ jobs:
     if: github.repository == 'andrescli11/gastos-compartidos' && github.ref == 'refs/heads/feat/foundations-money'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -34,6 +34,7 @@ jobs:
         with:
           node-version: 24
       - name: Resolve dependencies without lifecycle scripts
+        id: resolve
         if: steps.lock.outputs.missing == 'true'
         run: npm install --ignore-scripts
       - name: Pin direct dependencies to resolved versions
@@ -68,16 +69,15 @@ jobs:
           }
           NODE
           npm run format
-      - name: Commit dependency lock and tracked formatting changes
+      - name: Prepare reviewed source snapshot artifact
         if: steps.lock.outputs.missing == 'true'
         env:
-          BOOTSTRAP_TOKEN: ${{ github.token }}
           BOOTSTRAP_REPOSITORY: ${{ github.repository }}
           BOOTSTRAP_EXPECTED_SHA: ${{ github.sha }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
-          import { lstatSync, readFileSync } from 'node:fs';
+          import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
           import { execFileSync } from 'node:child_process';
           const repository = process.env.BOOTSTRAP_REPOSITORY;
           const expected = process.env.BOOTSTRAP_EXPECTED_SHA;
@@ -102,57 +102,53 @@ jobs:
             }
             const mode = path === 'package-lock.json' ? '100644' : tracked.get(path);
             if (!['100644', '100755'].includes(mode) || !lstatSync(path).isFile()) {
-              throw new Error('Only regular tracked files and the new lockfile may be committed');
+              throw new Error('Only regular tracked files and the new lockfile may be exported');
             }
             return { path, mode, type: 'blob', content: readFileSync(path, 'utf8') };
           });
-          async function api(path, method = 'GET', body) {
-            const response = await fetch(`https://api.github.com/repos/${repository}/${path}`, {
-              method,
-              headers: {
-                Authorization: `Bearer ${process.env.BOOTSTRAP_TOKEN}`,
-                Accept: 'application/vnd.github+json',
-                'X-GitHub-Api-Version': '2022-11-28',
-                'Content-Type': 'application/json',
-              },
-              body: body === undefined ? undefined : JSON.stringify(body),
-            });
-            if (!response.ok) throw new Error(`GitHub API request failed (${response.status})`);
-            return response.json();
-          }
-          const head = await api(`git/ref/heads/${branch}`);
-          if (head.object.sha !== expected) throw new Error('Branch advanced; refusing stale lockfile commit');
-          const parent = await api(`git/commits/${expected}`);
-          const tree = await api('git/trees', 'POST', {
-            base_tree: parent.tree.sha,
-            tree: entries,
-          });
-          const commit = await api('git/commits', 'POST', {
-            message: 'build: pin dependencies and normalize source formatting',
-            tree: tree.sha,
-            parents: [expected],
-          });
-          const latest = await api(`git/ref/heads/${branch}`);
-          if (latest.object.sha !== expected) throw new Error('Branch advanced; refusing stale lockfile commit');
-          await api(`git/refs/heads/${branch}`, 'PATCH', { sha: commit.sha, force: false });
-          console.log(`Committed dependency lockfile: ${commit.sha}`);
+          if (!/^[a-f0-9]{40}$/.test(expected)) throw new Error('Invalid snapshot parent SHA');
+          mkdirSync('.ci-bootstrap', { recursive: true });
+          writeFileSync('.ci-bootstrap/snapshot.json', `${JSON.stringify({ parentSha: expected, entries }, null, 2)}\n`);
+          console.log(`Prepared source snapshot with ${entries.length} files for ${branch}`);
           NODE
-      # GITHUB_TOKEN commits do not trigger another push workflow. Validate here too.
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Upload source snapshot for review and publication
+        if: steps.lock.outputs.missing == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bootstrap-source-snapshot
+          path: .ci-bootstrap/snapshot.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+      # Gather independent failures without suppressing any failed gate.
+      - name: Verify reproducible install
+        id: install
+        if: always() && steps.lock.outputs.missing == 'true' && steps.resolve.outcome == 'success'
         run: npm ci
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Check formatting
+        if: always() && steps.install.outcome == 'success'
         run: npm run format:check
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Lint
+        if: always() && steps.install.outcome == 'success'
         run: npm run lint
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Typecheck
+        if: always() && steps.install.outcome == 'success'
         run: npm run typecheck
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Test
+        if: always() && steps.install.outcome == 'success'
         run: npm test
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Build
+        id: build
+        if: always() && steps.install.outcome == 'success'
         run: npm run build
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Install browser
+        id: browser
+        if: always() && steps.build.outcome == 'success'
         run: npx playwright install --with-deps chromium
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Browser tests
+        if: always() && steps.build.outcome == 'success' && steps.browser.outcome == 'success'
+        timeout-minutes: 10
         run: npx playwright test
-      - if: steps.lock.outputs.missing == 'true'
+      - name: Audit dependencies
+        if: always() && steps.install.outcome == 'success'
         run: npm audit --audit-level=high

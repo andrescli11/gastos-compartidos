@@ -111,3 +111,5 @@
 ## ADR-017 — Conflicto de versión distinguible de idempotencia
 
 **Decisión:** el BFF expone `STALE_VERSION` solo para mensajes SQL conocidos de versión monótona del libro/gasto/pago. Permite descartar un comando incierto que ya no puede aplicarse por versión y revisar sobre datos actuales. Un conflicto de idempotencia genérico no demuestra ausencia de escritura y mantiene la clave/diario.
+
+**Actualización ADR-016:** el token de Actions recibió403 al escribir el resultado. El bootstrap pasa a permisos de lectura y entrega un artefacto de fuentes normalizadas/lockfile, con exclusión de secretos. La publicación se realiza mediante la conexión GitHub autorizada, conservando revisión y lease del HEAD. No se pide ampliar permisos del repositorio ni se ocultan checks fallidos.

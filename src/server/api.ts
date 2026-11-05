@@ -34,6 +34,10 @@ export function createApi(deps:ApiDependencies){
       if(action==='context')return jsonResponse({...await deps.access.context(session),csrfToken:csrfToken(session)});
       if(action==='list')return jsonResponse({expenses:await deps.expenses.list(session)});
       if(action==='summary'){
+        if(deps.payments){
+          const context=await deps.payments.context(session),full=summarizePaymentLedger(paymentLedger(context));
+          return jsonResponse({summary:full.books,settlementMode:full.configuration.mode,includesPayments:true,originalExpenseTotals:full.originalExpenseTotals});
+        }
         const records=await deps.expenses.list(session);
         const summary=summarizeExpenses(records.map(e=>({payerId:e.payerId,currency:e.currency,amountMinor:BigInt(e.amountMinor),splits:e.splits.map(s=>({participantId:s.participantId,amountMinor:BigInt(s.amountMinor)}))})));
         return jsonResponse({summary});
