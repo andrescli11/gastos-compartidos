@@ -40,7 +40,14 @@ export function sqlExecutor(): SqlExecutor {
         database: decodeURIComponent(url.pathname.slice(1)),
         user: decodeURIComponent(url.username),
         password: decodeURIComponent(url.password),
-        ssl: localTest ? false : { rejectUnauthorized: true },
+        ssl: localTest
+          ? false
+          : {
+              rejectUnauthorized: true,
+              ...(process.env.DATABASE_CA_CERT
+                ? { ca: process.env.DATABASE_CA_CERT }
+                : {}),
+            },
         max: 3,
         connectionTimeoutMillis: 5000,
         idleTimeoutMillis: 10000,
