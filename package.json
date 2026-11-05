@@ -23,7 +23,8 @@
     "test:local": "npm run test:domain && npm run test:persistence && npm run test:api && npm run test:csv && npm run test:pending && npm run test:imports",
     "test:pending": "node scripts/check-pending.mjs",
     "test:payments": "node scripts/check-payments.mjs",
-    "test:imports": "node scripts/check-import-workflow.mjs && node scripts/check-csv-workflow.mjs"
+    "test:imports": "node scripts/check-import-workflow.mjs && node scripts/check-csv-workflow.mjs",
+    "test:http": "node scripts/check-http-flow.mjs"
   },
   "dependencies": {
     "next": "16.4.5",

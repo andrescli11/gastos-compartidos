@@ -104,6 +104,7 @@ test("a known first conflict clears review and participant cannot configure", as
       : r.fulfill({ status: 409, json: { error: "Actualiza el libro." } }),
   );
   await page.goto("/pagos");
+  await expect(page.getByLabel("Receptor", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Configuración de liquidación" }),
   ).toHaveCount(0);
@@ -113,7 +114,9 @@ test("a known first conflict clears review and participant cannot configure", as
   await page
     .getByRole("button", { name: "Confirmar operación", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toHaveText("Actualiza el libro.");
+  await expect(
+    page.getByRole("alert").filter({ hasText: /^Actualiza el libro\.$/ }),
+  ).toHaveText("Actualiza el libro.");
   await expect(
     page.getByRole("button", { name: "Revisar pago", exact: true }),
   ).toBeEnabled();

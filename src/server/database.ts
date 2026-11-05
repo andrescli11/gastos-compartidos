@@ -25,7 +25,8 @@ export function sqlExecutor(): SqlExecutor {
       throw new PersistenceError("UNAVAILABLE");
     }
     const localTest =
-      process.env.NODE_ENV === "test" &&
+      (process.env.NODE_ENV === "test" ||
+        (process.env.CI === "true" && process.env.GITHUB_ACTIONS === "true")) &&
       process.env.CUSCO_DB_TEST_DISPOSABLE === "yes" &&
       ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname);
     // Se descomponen los campos: parámetros sslmode de la URL no pueden desactivar TLS.
@@ -34,7 +35,7 @@ export function sqlExecutor(): SqlExecutor {
       throw new PersistenceError("UNAVAILABLE");
     try {
       pool = new Pool({
-        host: url.hostname,
+        host: url.hostname.replace(/^\[|\]$/g, ""),
         port,
         database: decodeURIComponent(url.pathname.slice(1)),
         user: decodeURIComponent(url.username),

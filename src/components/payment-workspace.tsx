@@ -333,7 +333,11 @@ export default function PaymentWorkspace() {
                 {name(b.participantId)}: {money(b.amountMinor, c)}
               </p>
             ))}
-            <h4>Transferencias propuestas</h4>
+            <h4>
+              {summary.books[c].minimumProven
+                ? "Transferencias propuestas · mínimo probado"
+                : "Propuesta optimizada"}
+            </h4>
             {summary.books[c].transfers.length ? (
               summary.books[c].transfers.map((t, i) => (
                 <p key={i}>

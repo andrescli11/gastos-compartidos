@@ -5,6 +5,7 @@ permissions:
 jobs:
   postgres:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -26,9 +27,41 @@ jobs:
       PGPASSWORD: local-ci-fixture-only
       PGDATABASE: cusco_test
       CUSCO_DB_TEST_DISPOSABLE: "yes"
+      DATABASE_URL: postgresql://postgres:local-ci-fixture-only@127.0.0.1:5432/cusco_test
+      APP_URL: http://127.0.0.1:3000
+      RATE_LIMIT_SECRET: disposable-ci-http-quota-fixture-only-00000000
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
+          cache: npm
+      - run: npm ci
       - run: bash scripts/test-db.sh
+      - run: npm run build
+      - name: Verify real HTTP and database flow
+        shell: bash
+        run: |
+          npm run start > /tmp/cusco-http-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          node --input-type=module <<'NODE'
+          let ready = false;
+          const deadline = Date.now() + 30000;
+          while (Date.now() < deadline) {
+            try {
+              const response = await fetch(`${process.env.APP_URL}/entrar`, {
+                signal: AbortSignal.timeout(1000),
+              });
+              if (response.ok) { ready = true; break; }
+            } catch {}
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+          if (!ready) {
+            console.error("HTTP server readiness failed (details withheld).");
+            process.exitCode = 1;
+          }
+          NODE
+          node scripts/check-http-flow.mjs
