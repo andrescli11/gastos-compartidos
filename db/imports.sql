@@ -197,7 +197,7 @@ begin
    and ((a.participant_id is not null and owner_participant_id=a.participant_id) or (a.participant_id is null and created_by_link_id=a.id)))>=20 then
    raise exception using errcode='P0001',message='rate_limited'; end if;
   rows_value:=app_private.refresh_import_review(a.trip_id,app_private.import_rows(p_command->'rows'));
-  if p_command->>'sourceType'<>'manual' and exists(select 1 from jsonb_array_elements(rows_value) r group by r->>'sourceSheet',r->>'sourceRow' having count(*)>1) then raise exception using errcode='22023',message='duplicate_import_source'; end if;
+  if p_command->>'sourceType'<>'manual' and exists(select 1 from jsonb_array_elements(rows_value) as origin(value) group by origin.value->>'sourceSheet',origin.value->>'sourceRow' having count(*)>1) then raise exception using errcode='22023',message='duplicate_import_source'; end if;
   insert into app_private.import_jobs(trip_id,owner_participant_id,created_by_link_id,source_type,rows)
    values(a.trip_id,a.participant_id,a.id,p_command->>'sourceType',rows_value) returning * into j;
  else
@@ -208,14 +208,14 @@ begin
    raise exception using errcode='40001',message='import_version_conflict'; end if;
   if op='save' then
    rows_value:=app_private.refresh_import_review(a.trip_id,app_private.import_rows(p_command->'rows',j.rows));
-   if j.source_type<>'manual' and exists(select 1 from jsonb_array_elements(rows_value) r group by r->>'sourceSheet',r->>'sourceRow' having count(*)>1) then raise exception using errcode='22023',message='duplicate_import_source'; end if;
+   if j.source_type<>'manual' and exists(select 1 from jsonb_array_elements(rows_value) as origin(value) group by origin.value->>'sourceSheet',origin.value->>'sourceRow' having count(*)>1) then raise exception using errcode='22023',message='duplicate_import_source'; end if;
    -- Successful rows are immutable and remain traceable during partial retry.
    for r in select value from jsonb_array_elements(app_private.refresh_import_review(j.trip_id,j.rows)) loop
     if exists(select 1 from jsonb_array_elements(j.results) x where x->>'rowId'=r->>'id' and x->>'status'='persisted') then
      rows_value:=(select coalesce(jsonb_agg(value),'[]'::jsonb) from jsonb_array_elements(rows_value) where value->>'id'<>r->>'id')||jsonb_build_array(r);
     end if;
    end loop;
-   if j.source_type<>'manual' and exists(select 1 from jsonb_array_elements(rows_value) r group by r->>'sourceSheet',r->>'sourceRow' having count(*)>1) then raise exception using errcode='22023',message='duplicate_import_source'; end if;
+   if j.source_type<>'manual' and exists(select 1 from jsonb_array_elements(rows_value) as origin(value) group by origin.value->>'sourceSheet',origin.value->>'sourceRow' having count(*)>1) then raise exception using errcode='22023',message='duplicate_import_source'; end if;
    if jsonb_array_length(rows_value)>200 then raise exception using errcode='22023',message='invalid_import_rows'; end if;
    update app_private.import_jobs set rows=rows_value,version=version+1 where id=j.id returning * into j;
   elsif op='cancel' then
