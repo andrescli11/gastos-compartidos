@@ -43,8 +43,7 @@ try {
         response.request().method() === "POST",
       { timeout: 20000 },
     );
-    await click();
-    const response = await pending;
+    const [response] = await Promise.all([pending, click()]);
     assert.equal(response.status(), 200);
     return response.json();
   }
@@ -146,33 +145,73 @@ try {
     await aBrowser.page
       .getByRole("link", { name: "Ingresar gastos", exact: true })
       .click();
-    await aBrowser.page.getByRole("link", { name: /01 \/ INDIVIDUAL/ }).click();
     const description = `Browser expense ${suffix}`;
     await aBrowser.page
-      .getByLabel("Descripción", { exact: true })
+      .getByLabel("Descripción gasto 1", { exact: true })
       .fill(description);
-    await aBrowser.page.getByLabel("Fecha", { exact: true }).fill("2026-01-01");
-    await aBrowser.page.getByLabel("Importe", { exact: true }).fill("1.00");
     await aBrowser.page
-      .getByLabel("Moneda", { exact: true })
-      .first()
+      .getByLabel("Fecha gasto 1", { exact: true })
+      .fill("2026-10-30");
+    await aBrowser.page
+      .getByLabel("Importe gasto 1", { exact: true })
+      .fill("1.00");
+    await aBrowser.page
+      .getByLabel("Moneda gasto 1", { exact: true })
       .selectOption("PEN");
-    const beneficiaries = aBrowser.page.getByRole("group", {
-      name: "Beneficiarios",
-      exact: true,
+    const card = aBrowser.page.locator("article").filter({
+      has: aBrowser.page.getByRole("heading", {
+        name: "Gasto 1",
+        exact: true,
+      }),
     });
-    const boxes = beneficiaries.getByRole("checkbox");
+    const boxes = card.getByRole("checkbox");
     for (let i = 0; i < (await boxes.count()); i++)
       await boxes.nth(i).uncheck();
-    await beneficiaries
-      .getByRole("checkbox", { name: b.name, exact: true })
+    await aBrowser.page
+      .getByLabel(`${b.name} en gasto 1`, { exact: true })
       .check();
     stage = "expense review";
+    const initialReview = await command(aBrowser.page, "/api/imports", () =>
+      aBrowser.page
+        .getByRole("button", { name: "Revisar gastos", exact: true })
+        .click(),
+    );
+    if (initialReview.job.rows.some((row) => row.selected && !row.reviewed)) {
+      // Server-discovered warnings require a fresh, explicit acknowledgement.
+      assert.equal(
+        (await browserJson(aBrowser.page, "/api/expenses")).expenses.filter(
+          (expense) => expense.payerId === a.id,
+        ).length,
+        0,
+      );
+      const row = initialReview.job.rows[0];
+      if (
+        row.duplicateExpenseIds.length ||
+        row.warnings.includes("DUPLICATE_IN_BATCH")
+      ) {
+        await aBrowser.page
+          .getByLabel("Mantener ambos en gasto 1", { exact: true })
+          .check();
+      }
+      await aBrowser.page
+        .getByLabel("He revisado gasto 1", { exact: true })
+        .check();
+      const canReview = await aBrowser.page
+        .getByRole("button", { name: "Revisar gastos", exact: true })
+        .isEnabled();
+      assert.equal(
+        canReview,
+        true,
+        `Review blocked: warnings=${row.warnings.join(",")}; duplicates=${row.duplicateExpenseIds.length}`,
+      );
+      await command(aBrowser.page, "/api/imports", () =>
+        aBrowser.page
+          .getByRole("button", { name: "Revisar gastos", exact: true })
+          .click(),
+      );
+    }
     await aBrowser.page
-      .getByRole("button", { name: "Revisar antes de guardar", exact: true })
-      .click();
-    await aBrowser.page
-      .getByRole("heading", { name: "Confirmar gasto", exact: true })
+      .getByRole("heading", { name: "Confirma tus gastos", exact: true })
       .waitFor();
     assert.equal(
       (await browserJson(aBrowser.page, "/api/expenses")).expenses.filter(
@@ -180,14 +219,18 @@ try {
       ).length,
       0,
     );
+    await aBrowser.page
+      .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
+      .check();
     stage = "expense confirmation";
-    await command(aBrowser.page, "/api/expenses", () =>
+    await command(aBrowser.page, "/api/imports", () =>
       aBrowser.page
-        .getByRole("button", { name: "Confirmar", exact: true })
+        .getByRole("button", { name: "Confirmar gastos", exact: true })
         .click(),
     );
     await aBrowser.page
-      .getByRole("heading", { name: description, exact: true })
+      .getByRole("status")
+      .filter({ hasText: "Gastos guardados." })
       .waitFor();
     assert.equal(
       (await browserJson(aBrowser.page, "/api/expenses")).expenses.filter(
@@ -195,6 +238,7 @@ try {
       ).length,
       1,
     );
+    await aBrowser.page.goto(`${base}/gastos`);
 
     stage = "payment registration";
     const bBrowser = await enter(b, viewport);
@@ -266,7 +310,10 @@ try {
     assert(links.links.some((link) => link.displayName === b.name));
     assert(!JSON.stringify(links).includes(a.token));
     stage = "Excel template download";
-    await aBrowser.page.goto(`${base}/importar`);
+    await aBrowser.page.goto(`${base}/gastos/nuevo`);
+    await aBrowser.page
+      .getByText("¿Prefieres usar Excel?", { exact: true })
+      .click();
     await aBrowser.page
       .getByRole("link", { name: "Descargar plantilla Excel", exact: true })
       .waitFor();
@@ -326,16 +373,16 @@ sys.stdout.buffer.write(out.getvalue())
       .getByRole("button", { name: "Preparar hoja seleccionada", exact: true })
       .click();
     await aBrowser.page
-      .getByLabel("Descripción fila 1", { exact: true })
+      .getByLabel("Descripción gasto 1", { exact: true })
       .waitFor();
     assert.equal(
       await aBrowser.page
-        .getByLabel("Descripción fila 1", { exact: true })
+        .getByLabel("Descripción gasto 1", { exact: true })
         .inputValue(),
       importedDescription,
     );
     await aBrowser.page
-      .getByLabel("Seleccionar fila 1", { exact: true })
+      .getByLabel("Seleccionar gasto 1", { exact: true })
       .check();
     await command(aBrowser.page, "/api/imports", () =>
       aBrowser.page
@@ -349,18 +396,15 @@ sys.stdout.buffer.write(out.getvalue())
       0,
     );
     await aBrowser.page
-      .getByLabel("He revisado fila 1", { exact: true })
+      .getByLabel("He revisado gasto 1", { exact: true })
       .check();
     await command(aBrowser.page, "/api/imports", () =>
       aBrowser.page
-        .getByRole("button", { name: "Revisar selección", exact: true })
+        .getByRole("button", { name: "Revisar gastos", exact: true })
         .click(),
     );
     await aBrowser.page
-      .getByLabel(
-        "Confirmo incorporar estas filas revisadas al libro del viaje.",
-        { exact: true },
-      )
+      .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
       .check();
     const confirmReply = aBrowser.page.waitForResponse(
       (r) =>
@@ -369,7 +413,7 @@ sys.stdout.buffer.write(out.getvalue())
     );
     await aBrowser.page
       .getByRole("button", {
-        name: "Confirmar gastos seleccionados",
+        name: "Confirmar gastos",
         exact: true,
       })
       .click();

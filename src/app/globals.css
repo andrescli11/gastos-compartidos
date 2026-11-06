@@ -524,3 +524,81 @@ fieldset {
     outline-offset: 3px;
   }
 }
+
+.entry-expense-card {
+  border: 1px solid #d4dbd1;
+  border-radius: 14px;
+  padding: 24px;
+  background: #fff;
+  margin: 20px 0;
+}
+.entry-expense-card h3 {
+  margin-bottom: 12px;
+}
+.entry-expense-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.entry-expense-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.entry-expense-fields input,
+.entry-expense-fields select {
+  width: 100%;
+  min-width: 0;
+}
+.entry-card-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.entry-card-heading-actions button {
+  margin: 0;
+}
+.entry-add-expense {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+  background: #edf0e7;
+  color: #243d35;
+  border: 1px dashed #345c46;
+}
+.entry-add-expense span {
+  font-size: 26px;
+  line-height: 1;
+}
+.entry-excel-secondary,
+.entry-drafts {
+  border-top: 1px solid #d4dbd1;
+  padding: 24px 0;
+  margin-top: 24px;
+}
+.entry-excel-secondary > summary,
+.entry-drafts > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .entry-expense-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .entry-expense-fields label:first-child {
+    grid-column: 1/-1;
+  }
+}
+@media (max-width: 500px) {
+  .entry-expense-card {
+    padding: 18px;
+  }
+  .entry-expense-fields {
+    grid-template-columns: 1fr;
+  }
+}

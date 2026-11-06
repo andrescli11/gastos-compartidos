@@ -1,5 +1,5 @@
-import ExpenseWorkspace from "@/components/expense-workspace";
+import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
-export default function EntryPage() {
-  return <ExpenseWorkspace entry />;
+export default function LegacyEntryPage() {
+  redirect("/gastos/nuevo");
 }
