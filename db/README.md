@@ -2,20 +2,20 @@
 
 ## Estado
 
-`schema.sql` y `access.sql` (en ese orden) son el esquema fuente para una base vacía y contiene tablas privadas y API SQL. **Todavía no es una migración Supabase generada ni se ha ejecutado en PostgreSQL en este entorno.** El CLI no está instalado, el socket Docker no es accesible y la red no permite descargar herramientas. No se declara Gate A/C superado.
+Los esquemas y funciones se ejecutaron y verificaron en PostgreSQL17 de CI y se aplicaron al Supabase real autorizado. Las migraciones en supabase/migrations reproducen las versiones remotas. Incluyen gastos, acceso, pagos, importaciones y mantenimiento. Ver [evidencia de liberación](../docs/17-release-verification.md).
 
-Al disponer del CLI: consultar su `--help`, crear la migración con `supabase migration new`, incorporar el SQL fuente al archivo generado, probar desde base vacía, ejecutar los advisors y revisar la lista de migraciones. No inventar un historial remoto ni aplicar directamente este archivo a una base con datos. Mantener `app_private` y `app_api` fuera de los esquemas expuestos de Data API.
+No volver a aplicar los archivos fuente completos a la base existente. Los cambios siguientes requieren migraciones compatibles/aditivas, revisión y CI. app_private y app_api permanecen fuera del acceso público; el runtime usa solamente funciones autorizadas.
 
 ## Contrato y límite de confianza
 
 - `app_private`: viaje fijo, participantes, hashes de enlaces y sesiones, gastos, partes, revisiones, auditoría e idempotencia. RLS activo, sin grants públicos y sin acceso directo del BFF.
-- `app_api`: dos funciones con `search_path` vacío y EXECUTE solo para `cusco_bff`. La identidad se deriva del hash de sesión, nunca de un rol o participante enviado en el comando.
+- `app_api`: funciones autorizadas con `search_path` vacío y EXECUTE solo para `cusco_bff`. La identidad se deriva del hash de sesión, nunca de un rol o participante enviado en el comando.
 - `cusco_bff`: rol NOLOGIN y sin privilegios administrativos; el operador provisionará un login dedicado miembro de este rol mediante el canal seguro de credenciales. No otorgar acceso directo a tablas ni membresía de roles de administración. La cuenta que aplica el esquema es distinta de la cuenta runtime.
 - Las funciones SECURITY DEFINER se mantienen en esquema no expuesto y son propiedad de la cuenta de migración. El bypass de RLS del propietario es deliberado y queda limitado por validación de sesión y pagador dentro de la función. No hay política `auth.uid()` porque no se usa Supabase Auth.
 - `DATABASE_URL`: conexión PostgreSQL del login BFF (pooler en producción). `src/server/database.ts` limita el pool y exige TLS con validación de certificado fuera de tests locales. No usa claves service_role ni expone configuración al cliente. Cada consulta reserva una conexión, inicia transacción, asume `SET LOCAL ROLE cusco_bff` y confirma o revierte antes de liberarla. Una membresía incorrecta falla sin elevar permisos.
 - `src/server/expense-repository.ts`: consultas parametrizadas, entrada y salida validadas e importes JSON como cadenas decimales de céntimos. Los errores no conservan mensaje, detail, consulta ni cause del driver.
 
-El código HTTP y de pantalla ya llama a esta API mediante sesión, CSRF y cuotas. Todavía falta verificar la integración PostgreSQL y el navegador antes de desplegar. No existe fallback de persistencia pública. Un diario cifrado en sessionStorage recupera confirmaciones inciertas dentro de la misma pestaña/sesión; no contiene una copia en claro del token o gasto.
+El código HTTP y de pantalla ya llama a esta API mediante sesión, CSRF y cuotas. La integración PostgreSQL, el navegador y el despliegue se verificaron; ver el informe de liberación. No existe fallback de persistencia pública. Un diario cifrado en sessionStorage recupera confirmaciones inciertas dentro de la misma pestaña/sesión; no contiene una copia en claro del token o gasto.
 
 ## Comandos
 
@@ -53,11 +53,11 @@ El script requiere confirmación técnica explícita de base desechable y falla 
 
 `check-db-concurrency.mjs` crea fixtures sintéticos permanentes solo en esa base efímera; prueba dos reintentos simultáneos y dos ediciones competidoras. Se destruye la instancia de CI al terminar. No imprime SQL ni errores del driver.
 
-Pendiente: ejecutar las suites PostgreSQL, advisors Supabase, carrera explícita revocación/transacción, canje de sesiones y pruebas BFF/UI. Pagos, importaciones y Storage se implementarán en cortes siguientes.
+Las suites PostgreSQL, advisors, canje, revocación y recorridos BFF/UI se ejecutaron. Pagos e importaciones determinísticas ya están integrados. Los originales de importación no se retienen en Storage, según ADR018.
 
 ## Despliegue y recuperación
 
-Este archivo no se ejecuta en el arranque de la app ni automáticamente contra producción. Primero generar y validar migración con Supabase CLI. Producción requiere los gates y revisión de configuración descritos en `docs/07-autonomous-development.md`.
+Este archivo no se ejecuta en el arranque de la app ni automáticamente contra producción. Las versiones remotas aplicadas están reproducidas en supabase/migrations. Producción requiere los gates y revisión de configuración descritos en `docs/07-autonomous-development.md`.
 
 El primer esquema es aditivo. Ante fallo durante su transacción, PostgreSQL revierte sus cambios. Tras datos reales, recuperar con una migración correctiva compatible o backup verificado; no usar DROP/rollback destructivo. Volver a la versión anterior de la app solo si su contrato sigue siendo compatible con el esquema desplegado.
 

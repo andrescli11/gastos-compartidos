@@ -1,5 +1,7 @@
 # Conexión con Supabase real
 
+> Registro de fases anteriores. Estado vigente y evidencia de liberación: [verificación actual](17-release-verification.md).
+
 El propietario autorizó usar el proyecto existente sin crear otra base (2026-11-05).
 
 ## Aplicado

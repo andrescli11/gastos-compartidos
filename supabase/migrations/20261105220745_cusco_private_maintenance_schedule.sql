@@ -1,0 +1,1 @@
+create extension if not exists pg_cron with schema pg_catalog; grant usage on schema cron to postgres; grant all privileges on all tables in schema cron to postgres; select cron.schedule('cusco-private-maintenance','17 * * * *','select app_private.run_maintenance();'); select app_private.run_maintenance();

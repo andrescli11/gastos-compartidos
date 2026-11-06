@@ -1,5 +1,7 @@
 # Revisión y confirmación de importaciones: dominio local
 
+> Registro de fases anteriores. Estado vigente y evidencia de liberación: [verificación actual](17-release-verification.md).
+
 `src/domain/import-workflow.ts` prepara comandos para un adaptador de persistencia futuro. NO escribe gastos ni acepta resultados del navegador como prueba de escritura.
 
 ## Contratos

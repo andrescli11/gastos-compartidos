@@ -1,5 +1,7 @@
 # Verificación del recorrido de gastos y pagos
 
+> Registro de fases anteriores. Estado vigente y evidencia de liberación: [verificación actual](17-release-verification.md).
+
 ## Historia
 
 Participante abre enlace privado → servidor canjea por cookie → consulta contexto → revisa y confirma un gasto → se registra pago externo → receptor confirma → el saldo se recalcula desde PostgreSQL.

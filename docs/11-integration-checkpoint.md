@@ -1,5 +1,7 @@
 # Checkpoint de integración
 
+> Registro de fases anteriores. Estado vigente y evidencia de liberación: [verificación actual](17-release-verification.md).
+
 Este es el único listado agrupado de dependencias externas. No enviar secretos ni enlaces privados por chat.
 
 ## Bloqueo que impide la siguiente verificación

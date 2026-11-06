@@ -49,7 +49,7 @@ export default function Home() {
         </p>
       </section>
       <div className="notice">
-        <strong>Vista de desarrollo</strong> · Participantes de ejemplo. Este
+        <strong>Simulador de reparto</strong> · Participantes de ejemplo. Este
         cálculo no guarda gastos ni accede a datos del grupo.
       </div>
       <section className="workspace" aria-labelledby="draft-title">

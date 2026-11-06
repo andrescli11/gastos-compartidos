@@ -1,5 +1,7 @@
 # Pagos y cierre: dominio validado localmente
 
+> Registro de fases anteriores. Estado vigente y evidencia de liberación: [verificación actual](17-release-verification.md).
+
 ## Alcance implementado
 
 `src/domain/payments.ts` implementa funciones puras sin dependencias externas ni escritura financiera. Reciben el libro vigente y una identidad que el futuro BFF debe resolver desde la sesión, nunca desde el payload del navegador.

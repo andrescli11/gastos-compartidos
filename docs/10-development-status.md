@@ -1,5 +1,7 @@
 # Estado de implementación — 2026-11-05
 
+> Registro de fases anteriores. Estado vigente y evidencia de liberación: [verificación actual](17-release-verification.md).
+
 Rama `feat/foundations-money`. Código local en desarrollo; sin integración ni despliegue. No hay conexión real a Supabase y no se han confirmado gastos reales.
 
 ## Código preparado
