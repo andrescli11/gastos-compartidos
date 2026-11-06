@@ -307,8 +307,9 @@ export default function ImportWorkspace() {
     if (loading || !session) return;
     const id = window.location.hash.slice(1);
     if (id === "manual-rows" || id === "prepare-data") {
-      if (id === "prepare-data") setExcelOpen(true);
-      document.getElementById(id)?.scrollIntoView();
+      const section = document.getElementById(id);
+      if (section instanceof HTMLDetailsElement) section.open = true;
+      section?.scrollIntoView();
     }
   }, [loading, session]);
   const locked = busy || uncertain || (!!job && job.state !== "preview");

@@ -159,14 +159,12 @@ try {
     await aBrowser.page
       .getByLabel("Moneda gasto 1", { exact: true })
       .selectOption("PEN");
-    const card = aBrowser.page
-      .locator("article")
-      .filter({
-        has: aBrowser.page.getByRole("heading", {
-          name: "Gasto 1",
-          exact: true,
-        }),
-      });
+    const card = aBrowser.page.locator("article").filter({
+      has: aBrowser.page.getByRole("heading", {
+        name: "Gasto 1",
+        exact: true,
+      }),
+    });
     const boxes = card.getByRole("checkbox");
     for (let i = 0; i < (await boxes.count()); i++)
       await boxes.nth(i).uncheck();
@@ -174,11 +172,28 @@ try {
       .getByLabel(`${b.name} en gasto 1`, { exact: true })
       .check();
     stage = "expense review";
-    await command(aBrowser.page, "/api/imports", () =>
+    const initialReview = await command(aBrowser.page, "/api/imports", () =>
       aBrowser.page
         .getByRole("button", { name: "Revisar gastos", exact: true })
         .click(),
     );
+    if (initialReview.job.rows.some((row) => row.selected && !row.reviewed)) {
+      // Server-discovered warnings require a fresh, explicit acknowledgement.
+      assert.equal(
+        (await browserJson(aBrowser.page, "/api/expenses")).expenses.filter(
+          (expense) => expense.payerId === a.id,
+        ).length,
+        0,
+      );
+      await aBrowser.page
+        .getByLabel("He revisado gasto 1", { exact: true })
+        .check();
+      await command(aBrowser.page, "/api/imports", () =>
+        aBrowser.page
+          .getByRole("button", { name: "Revisar gastos", exact: true })
+          .click(),
+      );
+    }
     await aBrowser.page
       .getByRole("heading", { name: "Confirma tus gastos", exact: true })
       .waitFor();
