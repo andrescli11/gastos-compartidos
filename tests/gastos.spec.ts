@@ -119,6 +119,52 @@ test("el encabezado reúne identidad y acciones accesibles según el rol", async
   }
 });
 
+test("los filtros del home usan una fecha exacta y permiten restaurar todos los gastos", async ({
+  page,
+}) => {
+  await mockSession(page);
+  const second = {
+    ...expense,
+    id: "30000000-0000-4000-8000-000000000002",
+    description: "Taxi fixture",
+    spentOn: "2026-01-02",
+  };
+  await page.route("**/api/expenses", (route) =>
+    route.fulfill({ json: { expenses: [expense, second] } }),
+  );
+  await page.goto("/");
+  await expect(page.getByLabel("Buscar", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Pagador", { exact: true })).toBeVisible();
+  const date = page.getByLabel("Fecha", { exact: true });
+  await expect(date).toBeVisible();
+  for (const obsolete of ["Moneda", "Desde", "Hasta"])
+    await expect(page.getByLabel(obsolete, { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Cena fixture", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Taxi fixture", exact: true }),
+  ).toBeVisible();
+  await date.fill("2026-01-02");
+  await expect(
+    page.getByRole("heading", { name: "Cena fixture", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Taxi fixture", exact: true }),
+  ).toBeVisible();
+  await date.fill("2026-01-03");
+  await expect(
+    page.getByText("No hay gastos con estos filtros.", { exact: true }),
+  ).toBeVisible();
+  await date.fill("");
+  await expect(
+    page.getByRole("heading", { name: "Cena fixture", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Taxi fixture", exact: true }),
+  ).toBeVisible();
+});
+
 test("edición revisada, guardado explícito y búsqueda", async ({ page }) => {
   await mockSession(page);
   let writes = 0;
