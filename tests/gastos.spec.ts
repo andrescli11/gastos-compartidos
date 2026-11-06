@@ -51,6 +51,74 @@ async function mockSession(page: import("@playwright/test").Page) {
     }),
   );
 }
+test("el encabezado reúne identidad y acciones accesibles según el rol", async ({
+  page,
+  isMobile,
+}) => {
+  await mockSession(page);
+  await page.route("**/api/expenses", (route) =>
+    route.fulfill({ json: { expenses: [] } }),
+  );
+  for (const role of ["participant", "admin"] as const) {
+    await page.route("**/api/session", (route) =>
+      route.fulfill({
+        json: { ...context, role, participantId: role === "admin" ? null : a },
+      }),
+    );
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "Adiós Yacolino", exact: true }),
+    ).toBeVisible();
+    const header = page.locator("header");
+    await expect(
+      header.getByRole("link", { name: "Inicio", exact: true }),
+    ).toHaveAttribute("href", "/");
+    await expect(
+      header.getByRole("button", { name: "Cerrar sesión", exact: true }),
+    ).toBeVisible();
+    const administration = header.getByRole("link", {
+      name: "Administración",
+      exact: true,
+    });
+    if (role === "admin") {
+      await expect(administration).toBeVisible();
+      await expect(administration).toHaveAttribute("href", "/administrar");
+    } else {
+      await expect(administration).toHaveCount(0);
+      await expect(
+        header.getByText("Fixture A", { exact: true }),
+      ).toBeVisible();
+    }
+    await expect(
+      page.getByRole("link", { name: "Ingresar gastos", exact: true }),
+    ).toHaveAttribute("href", "/gastos/nuevo");
+    await expect(
+      page.getByRole("link", { name: "Liquidar saldos", exact: true }),
+    ).toHaveAttribute("href", "/pagos");
+    await expect(
+      page.getByRole("link", { name: "Pagos y cierre", exact: true }),
+    ).toHaveCount(0);
+    const cards = page
+      .getByRole("region", { name: "Resumen por moneda", exact: true })
+      .locator(".summary-card");
+    await expect(cards).toHaveCount(2);
+    if (isMobile) {
+      const first = await cards.nth(0).boundingBox();
+      const second = await cards.nth(1).boundingBox();
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+      expect(Math.abs(first!.y - second!.y)).toBeLessThan(2);
+      expect(second!.x).toBeGreaterThan(first!.x);
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.unroute("**/api/session");
+  }
+});
+
 test("edición revisada, guardado explícito y búsqueda", async ({ page }) => {
   await mockSession(page);
   let writes = 0;

@@ -53,7 +53,7 @@ try {
     page.setDefaultTimeout(15000);
     await page.goto(`${base}/entrar#token=${actor.token}`);
     await page.waitForURL(`${base}/gastos`);
-    await page.getByRole("heading", { name: "Todo en orden." }).waitFor();
+    await page.getByRole("heading", { name: "Adiós Yacolino" }).waitFor();
     assert.equal(new URL(page.url()).hash, "");
     const cookie = (await context.cookies()).find(
       (item) => item.name === "__Host-cusco_session",
@@ -116,7 +116,7 @@ try {
     stage = "administrator browser session";
     const adminBrowser = await enter(admin, viewport);
     await adminBrowser.page
-      .getByRole("link", { name: "Pagos y cierre", exact: true })
+      .getByRole("link", { name: "Liquidar saldos", exact: true })
       .click();
     await adminBrowser.page.getByLabel("Modo", { exact: true }).waitFor();
     assert.equal(
@@ -244,7 +244,7 @@ try {
     stage = "payment registration";
     const bBrowser = await enter(b, viewport);
     await bBrowser.page
-      .getByRole("link", { name: "Pagos y cierre", exact: true })
+      .getByRole("link", { name: "Liquidar saldos", exact: true })
       .click();
     await bBrowser.page
       .getByLabel("Receptor", { exact: true })
@@ -267,7 +267,7 @@ try {
 
     stage = "receiver confirmation";
     await aBrowser.page
-      .getByRole("link", { name: "Pagos y cierre", exact: true })
+      .getByRole("link", { name: "Liquidar saldos", exact: true })
       .click();
     const payment = aBrowser.page
       .locator("article.expense-card")

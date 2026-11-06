@@ -676,3 +676,131 @@ fieldset {
     grid-template-columns: 1fr;
   }
 }
+
+.home-header {
+  height: auto;
+  display: block;
+  padding: 20px 0 24px;
+  margin-bottom: 24px;
+}
+.home-topbar,
+.home-account,
+.home-heading,
+.home-primary-actions {
+  display: flex;
+  align-items: center;
+}
+.home-topbar,
+.home-heading {
+  justify-content: space-between;
+  gap: 20px;
+}
+.home-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px dashed #8c9d8d;
+  border-radius: 8px;
+  color: #526257;
+  text-decoration: none;
+  font-size: 13px;
+}
+.home-account {
+  gap: 8px;
+  min-width: 0;
+}
+.home-account-name {
+  color: #526257;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-account .home-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #345c46;
+  cursor: pointer;
+}
+.home-icon:hover {
+  background: #e9eddf;
+}
+.home-header a:focus-visible,
+.home-header button:focus-visible {
+  outline: 3px solid #345c46;
+  outline-offset: 3px;
+}
+.home-heading {
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.home-heading h1 {
+  font-size: clamp(32px, 4vw, 46px);
+  margin: 0;
+}
+.home-primary-actions {
+  gap: 12px;
+}
+.home-primary-actions .primary-link,
+.home-secondary-link {
+  margin: 0;
+  padding: 13px 18px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+.home-secondary-link {
+  border: 1px solid #345c46;
+  color: #345c46;
+}
+.home-kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.home-kpis .summary-card {
+  padding: 16px;
+  min-width: 0;
+}
+.home-kpis .eyebrow {
+  margin: 0 0 8px;
+}
+.home-kpis .summary-card > strong {
+  font-size: clamp(20px, 3vw, 28px);
+  overflow-wrap: anywhere;
+}
+.home-kpis .summary-card > p:last-child:not(.eyebrow) {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .home-heading {
+    margin-top: 18px;
+    gap: 18px;
+  }
+  .home-primary-actions {
+    width: 100%;
+    gap: 8px;
+  }
+  .home-primary-actions > a {
+    flex: 1;
+    padding: 13px 8px;
+    font-size: 14px;
+  }
+  .home-kpis .summary-card {
+    padding: 14px 12px;
+  }
+}
