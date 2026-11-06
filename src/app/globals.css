@@ -848,3 +848,29 @@ fieldset {
     grid-column: 1 / -1;
   }
 }
+
+.home-filter-panel {
+  margin-bottom: 8px;
+}
+.home-filter-panel > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-filter-panel > summary:focus-visible {
+  outline: 3px solid #345c46;
+  outline-offset: 2px;
+}
+.home-filter-count {
+  margin-left: 10px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #e9eddf;
+  font-size: 12px;
+  font-weight: 400;
+}
+.home-filter-panel[open] > summary {
+  margin-bottom: 6px;
+}

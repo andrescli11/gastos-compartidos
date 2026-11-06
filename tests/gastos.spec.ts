@@ -133,6 +133,9 @@ test("los filtros del home usan una fecha exacta y permiten restaurar todos los 
     route.fulfill({ json: { expenses: [expense, second] } }),
   );
   await page.goto("/");
+  const filterToggle = page.getByLabel("Buscar y filtrar", { exact: true });
+  await expect(page.getByLabel("Buscar", { exact: true })).not.toBeVisible();
+  await filterToggle.click();
   await expect(page.getByLabel("Buscar", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Pagador", { exact: true })).toBeVisible();
   const date = page.getByLabel("Fecha", { exact: true });
@@ -146,6 +149,14 @@ test("los filtros del home usan una fecha exacta y permiten restaurar todos los 
     page.getByRole("heading", { name: "Taxi fixture", exact: true }),
   ).toBeVisible();
   await date.fill("2026-01-02");
+  await expect(filterToggle).toContainText("Filtros activos: 1");
+  await filterToggle.click();
+  await expect(date).not.toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Taxi fixture", exact: true }),
+  ).toBeVisible();
+  await filterToggle.click();
+  await expect(date).toHaveValue("2026-01-02");
   await expect(
     page.getByRole("heading", { name: "Cena fixture", exact: true }),
   ).toHaveCount(0);
@@ -199,6 +210,7 @@ test("edición revisada, guardado explícito y búsqueda", async ({ page }) => {
     page.getByRole("heading", { name: "Cena corregida", exact: true }),
   ).toBeVisible();
   expect(writes).toBe(1);
+  await page.getByLabel("Buscar y filtrar", { exact: true }).click();
   await page.getByLabel("Buscar", { exact: true }).fill("sin coincidencia");
   await expect(
     page.getByText("No hay gastos con estos filtros."),
