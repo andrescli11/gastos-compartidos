@@ -115,8 +115,112 @@ test("batch draft is private and creates expenses only after explicit version co
     expectedVersion: 2,
   });
   await expect(
-    page.getByLabel("Pagador gasto 1", { exact: true }),
+    page.getByLabel("Pagado por gasto 1", { exact: true }),
   ).not.toBeVisible();
+});
+test("el reparto personalizado valida cada céntimo y descarta importes anteriores al volver al equitativo", async ({
+  page,
+}) => {
+  let current = draft([]);
+  const commands: { operation: string; rows?: ImportRow[] }[] = [];
+  await page.route("**/api/session", (r) => r.fulfill({ json: session }));
+  await page.route("**/api/imports**", (r) => {
+    if (r.request().method() === "GET")
+      return r.fulfill({ json: { jobs: [] } });
+    const command = r.request().postDataJSON();
+    commands.push(command);
+    current = draft(
+      command.rows,
+      current.rows.length ? current.version + 1 : 1,
+    );
+    return r.fulfill({ json: { job: current } });
+  });
+  await page.goto("/gastos/nuevo");
+  await fillRow(page);
+  const type = page.getByLabel("Tipo de reparto gasto 1", { exact: true });
+  const ana = page.getByLabel("Parte de Ana gasto 1", { exact: true });
+  const bruno = page.getByLabel("Parte de Bruno gasto 1", { exact: true });
+  const review = page.getByRole("button", {
+    name: "Revisar gastos",
+    exact: true,
+  });
+  await expect(type).toHaveValue("equal");
+  await expect(ana).toHaveValue("5.01");
+  await expect(bruno).toHaveValue("5.00");
+  await expect(ana).toHaveAttribute("readonly", "");
+  await type.selectOption("custom");
+  await expect(ana).toBeEditable();
+  await ana.fill("4.00");
+  await bruno.fill("6.00");
+  await expect(review).toBeDisabled();
+  await bruno.fill("6.02");
+  await expect(review).toBeDisabled();
+  await bruno.fill("6.001");
+  await expect(review).toBeDisabled();
+  await bruno.fill("-6.01");
+  await expect(review).toBeDisabled();
+  expect(commands).toHaveLength(0);
+  await bruno.fill("6.01");
+  await expect(review).toBeEnabled();
+  await review.click();
+  await expect(
+    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+  ).toBeVisible();
+  expect(commands[0].rows?.[0]).toMatchObject({
+    amountMinor: "1001",
+    splits: [
+      { participantId: "a", amountMinor: "400" },
+      { participantId: "b", amountMinor: "601" },
+    ],
+  });
+  await type.selectOption("equal");
+  await expect(
+    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+  ).toHaveCount(0);
+  await expect(ana).toHaveValue("5.01");
+  await expect(bruno).toHaveValue("5.00");
+  await expect(ana).toHaveAttribute("readonly", "");
+  await type.selectOption("custom");
+  await expect(ana).toHaveValue("5.01");
+  await expect(bruno).toHaveValue("5.00");
+  await review.click();
+  await expect(
+    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+  ).toBeVisible();
+  expect(commands[1].rows?.[0].splits).toEqual([
+    { participantId: "a", amountMinor: "501" },
+    { participantId: "b", amountMinor: "500" },
+  ]);
+  expect(commands.map((command) => command.operation)).toEqual([
+    "create",
+    "save",
+  ]);
+});
+
+test("repartir entre permite elegir participantes o seleccionarlos a todos", async ({
+  page,
+}) => {
+  await page.route("**/api/session", (r) => r.fulfill({ json: session }));
+  await page.route("**/api/imports**", (r) =>
+    r.fulfill({ json: { jobs: [] } }),
+  );
+  await page.goto("/gastos/nuevo");
+  await fillRow(page);
+  await page.getByLabel("Repartir entre gasto 1", { exact: true }).click();
+  await page.getByLabel("Bruno en gasto 1", { exact: true }).uncheck();
+  await expect(
+    page.getByLabel("Parte de Ana gasto 1", { exact: true }),
+  ).toHaveValue("10.01");
+  await page.getByLabel("Seleccionar todos gasto 1", { exact: true }).check();
+  await expect(
+    page.getByLabel("Bruno en gasto 1", { exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByLabel("Parte de Ana gasto 1", { exact: true }),
+  ).toHaveValue("5.01");
+  await expect(
+    page.getByLabel("Parte de Bruno gasto 1", { exact: true }),
+  ).toHaveValue("5.00");
 });
 test("un mismo flujo permite añadir, quitar y confirmar dos gastos", async ({
   page,
@@ -352,7 +456,7 @@ test("editing a duplicate row invalidates review and the keep-both decision", as
     page.getByRole("button", { name: "Revisar gastos", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByLabel("Pagador gasto 1", { exact: true }),
+    page.getByLabel("Pagado por gasto 1", { exact: true }),
   ).toBeDisabled();
 });
 

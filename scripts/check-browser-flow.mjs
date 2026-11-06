@@ -158,16 +158,17 @@ try {
     await aBrowser.page
       .getByLabel("Moneda gasto 1", { exact: true })
       .selectOption("PEN");
-    const card = aBrowser.page.locator("article").filter({
-      has: aBrowser.page.getByRole("heading", {
-        name: "Gasto 1",
-        exact: true,
-      }),
+    const repartition = aBrowser.page.getByLabel("Repartir entre gasto 1", {
+      exact: true,
     });
-    const boxes = card.getByRole("checkbox");
+    await repartition.click();
+    const beneficiaryDetails = aBrowser.page
+      .locator("details")
+      .filter({ has: repartition });
+    const boxes = beneficiaryDetails.getByRole("checkbox");
     for (let i = 0; i < (await boxes.count()); i++)
       await boxes.nth(i).uncheck();
-    await aBrowser.page
+    await beneficiaryDetails
       .getByLabel(`${b.name} en gasto 1`, { exact: true })
       .check();
     stage = "expense review";

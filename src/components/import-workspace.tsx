@@ -151,6 +151,10 @@ function rowErrors(row: EditableRow, session: Session): string[] {
       })),
     );
     if (
+      row.splits.length !== row.beneficiaries.length ||
+      row.beneficiaries.some(
+        (id) => !row.splits.some((part) => part.participantId === id),
+      ) ||
       row.splits.some(
         (s) => !session.participants.some((p) => p.id === s.participantId),
       )
@@ -380,6 +384,53 @@ export default function ImportWorkspace() {
       }));
     } catch {
       return [];
+    }
+  }
+  function selectPeople(row: EditableRow, ids: string[]) {
+    const customAmounts = { ...row.customAmounts };
+    const splits = row.custom
+      ? ids.map((participantId) => {
+          const text =
+            customAmounts[participantId] ??
+            decimal(
+              row.splits.find((p) => p.participantId === participantId)
+                ?.amountMinor ?? "",
+            );
+          customAmounts[participantId] = text;
+          let amountMinor = "";
+          try {
+            amountMinor = parseMoney(text).toString();
+          } catch {}
+          return { participantId, amountMinor };
+        })
+      : equalParts(row, ids);
+    change(row.id, { beneficiaries: ids, splits, customAmounts });
+  }
+  function splitStatus(row: EditableRow) {
+    try {
+      const total = parseMoney(row.amountText);
+      const assigned = row.splits.reduce(
+        (sum, part) =>
+          sum +
+          parseMoney(
+            row.customAmounts[part.participantId] ?? decimal(part.amountMinor),
+          ),
+        0n,
+      );
+      const difference = total - assigned;
+      if (!difference)
+        return "Reparto completo: " + partMoney(total.toString(), row.currency);
+      return (
+        (difference > 0n
+          ? "Falta repartir: "
+          : "El reparto excede el gasto en: ") +
+        partMoney(
+          (difference < 0n ? -difference : difference).toString(),
+          row.currency,
+        )
+      );
+    } catch {
+      return "Introduce importes válidos para repartir el total exacto.";
     }
   }
   function addRow() {
@@ -817,10 +868,30 @@ export default function ImportWorkspace() {
                   className="expense-card entry-expense-card"
                   key={row.id}
                 >
-                  <h3>
-                    Gasto {index + 1}
-                    {completed.has(row.id) ? " · Guardada" : ""}
-                  </h3>
+                  <div className="entry-card-header">
+                    <h3>
+                      Gasto {index + 1}
+                      {completed.has(row.id) ? " · Guardado" : ""}
+                    </h3>
+                    {!completed.has(row.id) ? (
+                      <button
+                        className="entry-remove-expense"
+                        type="button"
+                        disabled={locked || rows.length === 1}
+                        aria-label={`Quitar gasto ${index + 1}`}
+                        onClick={() => {
+                          setRows((current) =>
+                            current.filter((r) => r.id !== row.id),
+                          );
+                          setDirty(true);
+                          setReview(false);
+                          setConfirmed(false);
+                        }}
+                      >
+                        Quitar gasto
+                      </button>
+                    ) : null}
+                  </div>
                   {!completed.has(row.id) ? (
                     <>
                       <div className="entry-card-heading-actions">
@@ -841,48 +912,25 @@ export default function ImportWorkspace() {
                             Incluir este gasto
                           </label>
                         ) : null}
-                        <button
-                          type="button"
-                          disabled={rows.length === 1}
-                          aria-label={`Quitar gasto ${index + 1}`}
-                          onClick={() => {
-                            setRows((current) =>
-                              current.filter((r) => r.id !== row.id),
-                            );
-                            setDirty(true);
-                            setReview(false);
-                            setConfirmed(false);
-                          }}
-                        >
-                          Quitar gasto
-                        </button>
                       </div>
-                      <div className="entry-expense-fields">
-                        <label htmlFor={`description-${row.id}`}>
-                          Descripción
-                          <input
-                            id={`description-${row.id}`}
-                            aria-label={`Descripción gasto ${index + 1}`}
-                            maxLength={240}
-                            value={row.description}
+                      <div className="entry-expense-fields entry-financial-fields">
+                        <label htmlFor={`payer-${row.id}`}>
+                          Pagado por
+                          <select
+                            id={`payer-${row.id}`}
+                            aria-label={`Pagado por gasto ${index + 1}`}
+                            disabled={session.role !== "admin"}
+                            value={row.payerId}
                             onChange={(e) =>
-                              change(row.id, { description: e.target.value })
+                              change(row.id, { payerId: e.target.value })
                             }
-                          />
-                        </label>
-                        <label htmlFor={`date-${row.id}`}>
-                          Fecha
-                          <input
-                            id={`date-${row.id}`}
-                            aria-label={`Fecha gasto ${index + 1}`}
-                            type="date"
-                            min="2000-01-01"
-                            max="2100-12-31"
-                            value={row.spentOn}
-                            onChange={(e) =>
-                              change(row.id, { spentOn: e.target.value })
-                            }
-                          />
+                          >
+                            {session.participants.map((person) => (
+                              <option key={person.id} value={person.id}>
+                                {person.displayName}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                         <label htmlFor={`amount-${row.id}`}>
                           Importe
@@ -931,6 +979,34 @@ export default function ImportWorkspace() {
                           </select>
                         </label>
                       </div>
+                      <div className="entry-expense-fields entry-description-fields">
+                        <label htmlFor={`date-${row.id}`}>
+                          Fecha
+                          <input
+                            id={`date-${row.id}`}
+                            aria-label={`Fecha gasto ${index + 1}`}
+                            type="date"
+                            min="2000-01-01"
+                            max="2100-12-31"
+                            value={row.spentOn}
+                            onChange={(e) =>
+                              change(row.id, { spentOn: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label htmlFor={`description-${row.id}`}>
+                          Descripción
+                          <input
+                            id={`description-${row.id}`}
+                            aria-label={`Descripción gasto ${index + 1}`}
+                            maxLength={240}
+                            value={row.description}
+                            onChange={(e) =>
+                              change(row.id, { description: e.target.value })
+                            }
+                          />
+                        </label>
+                      </div>
                     </>
                   ) : (
                     <p>
@@ -950,85 +1026,154 @@ export default function ImportWorkspace() {
                   ) : null}
                   {!completed.has(row.id) ? (
                     <>
-                      <div className="filters">
-                        <label htmlFor={`payer-${row.id}`}>
-                          Pagador gasto {index + 1}
-                        </label>
+                      <label
+                        className="entry-split-mode"
+                        htmlFor={`split-mode-${row.id}`}
+                      >
+                        Tipo de reparto
                         <select
-                          id={`payer-${row.id}`}
-                          disabled={session.role !== "admin"}
-                          value={row.payerId}
-                          onChange={(e) =>
-                            change(row.id, { payerId: e.target.value })
-                          }
+                          id={`split-mode-${row.id}`}
+                          aria-label={`Tipo de reparto gasto ${index + 1}`}
+                          value={row.custom ? "custom" : "equal"}
+                          onChange={(e) => {
+                            const custom = e.target.value === "custom";
+                            const splits = custom
+                              ? row.splits
+                              : equalParts(row, row.beneficiaries);
+                            change(row.id, {
+                              custom,
+                              splits,
+                              customAmounts: Object.fromEntries(
+                                splits.map((part) => [
+                                  part.participantId,
+                                  decimal(part.amountMinor),
+                                ]),
+                              ),
+                            });
+                          }}
                         >
-                          {session.participants.map((person) => (
-                            <option key={person.id} value={person.id}>
-                              {person.displayName}
-                            </option>
-                          ))}
+                          <option value="equal">Equitativo</option>
+                          <option value="custom">Personalizado</option>
                         </select>
-                        <label className="person">
-                          <span>Reparto personalizado gasto {index + 1}</span>
-                          <input
-                            type="checkbox"
-                            checked={row.custom}
-                            onChange={(e) =>
-                              change(row.id, {
-                                custom: e.target.checked,
-                                ...(!e.target.checked
-                                  ? {
-                                      splits: equalParts(
-                                        row,
-                                        row.beneficiaries,
-                                      ),
-                                    }
-                                  : {}),
-                              })
-                            }
-                          />
-                        </label>
-                      </div>
-                      <fieldset>
-                        <legend>Beneficiarios gasto {index + 1}</legend>
-                        {session.participants.map((person) => (
-                          <div className="person" key={person.id}>
-                            <label>
+                      </label>
+                      {!row.custom ? (
+                        <details className="entry-people-picker">
+                          <summary
+                            aria-label={`Repartir entre gasto ${index + 1}`}
+                          >
+                            Repartir entre ·{" "}
+                            {row.beneficiaries.length ===
+                            session.participants.length
+                              ? "Todos"
+                              : `${row.beneficiaries.length} personas`}
+                          </summary>
+                          <label className="person">
+                            <span>Seleccionar todos</span>
+                            <input
+                              type="checkbox"
+                              aria-label={`Seleccionar todos gasto ${index + 1}`}
+                              checked={
+                                row.beneficiaries.length ===
+                                session.participants.length
+                              }
+                              onChange={(e) =>
+                                selectPeople(
+                                  row,
+                                  e.target.checked
+                                    ? session.participants.map(
+                                        (person) => person.id,
+                                      )
+                                    : [],
+                                )
+                              }
+                            />
+                          </label>
+                          {session.participants.map((person) => (
+                            <label className="person" key={person.id}>
+                              <span>{person.displayName}</span>
                               <input
                                 type="checkbox"
                                 aria-label={`${person.displayName} en gasto ${index + 1}`}
                                 checked={row.beneficiaries.includes(person.id)}
-                                onChange={(e) => {
-                                  const ids = e.target.checked
-                                    ? [...row.beneficiaries, person.id]
-                                    : row.beneficiaries.filter(
-                                        (id) => id !== person.id,
-                                      );
-                                  change(row.id, {
-                                    beneficiaries: ids,
-                                    splits: row.custom
-                                      ? row.splits.filter((s) =>
-                                          ids.includes(s.participantId),
-                                        )
-                                      : equalParts(row, ids),
-                                  });
-                                }}
+                                onChange={(e) =>
+                                  selectPeople(
+                                    row,
+                                    e.target.checked
+                                      ? [...row.beneficiaries, person.id]
+                                      : row.beneficiaries.filter(
+                                          (id) => id !== person.id,
+                                        ),
+                                  )
+                                }
                               />
-                              {person.displayName}
                             </label>
-                            {row.custom &&
-                            row.beneficiaries.includes(person.id) ? (
+                          ))}
+                        </details>
+                      ) : null}
+                      <fieldset className="entry-shares">
+                        <legend>
+                          {row.custom
+                            ? "Repartir entre"
+                            : "Importes por persona"}
+                        </legend>
+                        {session.participants
+                          .filter(
+                            (person) =>
+                              row.custom ||
+                              row.beneficiaries.includes(person.id),
+                          )
+                          .map((person) => (
+                            <div
+                              className="person entry-person-share"
+                              key={person.id}
+                            >
+                              {row.custom ? (
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`${person.displayName} en gasto ${index + 1}`}
+                                    checked={row.beneficiaries.includes(
+                                      person.id,
+                                    )}
+                                    onChange={(e) =>
+                                      selectPeople(
+                                        row,
+                                        e.target.checked
+                                          ? [...row.beneficiaries, person.id]
+                                          : row.beneficiaries.filter(
+                                              (id) => id !== person.id,
+                                            ),
+                                      )
+                                    }
+                                  />
+                                  {person.displayName}
+                                </label>
+                              ) : (
+                                <span>{person.displayName}</span>
+                              )}
                               <input
                                 className="custom-amount"
                                 aria-label={`Parte de ${person.displayName} gasto ${index + 1}`}
                                 inputMode="decimal"
+                                readOnly={!row.custom}
+                                disabled={
+                                  !row.beneficiaries.includes(person.id)
+                                }
                                 value={
-                                  row.customAmounts[person.id] ??
-                                  decimal(
-                                    row.splits.find(
-                                      (s) => s.participantId === person.id,
-                                    )?.amountMinor ?? "",
-                                  )
+                                  row.custom
+                                    ? (row.customAmounts[person.id] ??
+                                      decimal(
+                                        row.splits.find(
+                                          (part) =>
+                                            part.participantId === person.id,
+                                        )?.amountMinor ?? "",
+                                      ))
+                                    : decimal(
+                                        row.splits.find(
+                                          (part) =>
+                                            part.participantId === person.id,
+                                        )?.amountMinor ?? "",
+                                      )
                                 }
                                 onChange={(e) => {
                                   let amountMinor = "";
@@ -1044,26 +1189,23 @@ export default function ImportWorkspace() {
                                     },
                                     splits: [
                                       ...row.splits.filter(
-                                        (s) => s.participantId !== person.id,
+                                        (part) =>
+                                          part.participantId !== person.id,
                                       ),
                                       { participantId: person.id, amountMinor },
                                     ],
                                   });
                                 }}
                               />
-                            ) : (
-                              <span>
-                                {partMoney(
-                                  row.splits.find(
-                                    (s) => s.participantId === person.id,
-                                  )?.amountMinor,
-                                  row.currency,
-                                )}
-                              </span>
-                            )}
-                          </div>
-                        ))}
+                            </div>
+                          ))}
                       </fieldset>
+                      {row.custom ? (
+                        <p role="status" className="entry-split-status">
+                          {splitStatus(row)}. El reparto debe sumar exactamente
+                          el importe del gasto.
+                        </p>
+                      ) : null}
                       {(row.description || row.amountText || row.spentOn) &&
                       rowErrors(row, session).length ? (
                         <ul className="error">

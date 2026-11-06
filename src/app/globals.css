@@ -602,3 +602,77 @@ fieldset {
     grid-template-columns: 1fr;
   }
 }
+
+.entry-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+.entry-card-header .entry-remove-expense {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: #345c46;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 6px 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.entry-card-header .entry-remove-expense:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.entry-expense-fields.entry-financial-fields {
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+}
+.entry-expense-fields.entry-description-fields {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+}
+.entry-expense-fields label:first-child {
+  grid-column: auto;
+}
+.entry-split-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 320px;
+  margin: 20px 0;
+}
+.entry-people-picker {
+  padding: 14px 16px;
+  border: 1px solid #c5cec1;
+  border-radius: 8px;
+  margin: 16px 0;
+}
+.entry-people-picker summary {
+  cursor: pointer;
+}
+.entry-person-share > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.entry-person-share input.custom-amount {
+  width: 120px;
+  max-width: 40%;
+  min-width: 80px;
+  height: auto;
+  min-height: 44px;
+  text-align: right;
+}
+.entry-person-share input[readonly] {
+  background: #f2f4ee;
+  color: #34443c;
+}
+.entry-split-status {
+  margin: 16px 0;
+}
+@media (max-width: 600px) {
+  .entry-expense-fields.entry-financial-fields,
+  .entry-expense-fields.entry-description-fields {
+    grid-template-columns: 1fr;
+  }
+}
