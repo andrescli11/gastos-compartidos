@@ -43,8 +43,7 @@ try {
         response.request().method() === "POST",
       { timeout: 20000 },
     );
-    await click();
-    const response = await pending;
+    const [response] = await Promise.all([pending, click()]);
     assert.equal(response.status(), 200);
     return response.json();
   }
@@ -185,9 +184,26 @@ try {
         ).length,
         0,
       );
+      const row = initialReview.job.rows[0];
+      if (
+        row.duplicateExpenseIds.length ||
+        row.warnings.includes("DUPLICATE_IN_BATCH")
+      ) {
+        await aBrowser.page
+          .getByLabel("Mantener ambos en gasto 1", { exact: true })
+          .check();
+      }
       await aBrowser.page
         .getByLabel("He revisado gasto 1", { exact: true })
         .check();
+      const canReview = await aBrowser.page
+        .getByRole("button", { name: "Revisar gastos", exact: true })
+        .isEnabled();
+      assert.equal(
+        canReview,
+        true,
+        `Review blocked: warnings=${row.warnings.join(",")}; duplicates=${row.duplicateExpenseIds.length}`,
+      );
       await command(aBrowser.page, "/api/imports", () =>
         aBrowser.page
           .getByRole("button", { name: "Revisar gastos", exact: true })
