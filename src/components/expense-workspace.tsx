@@ -902,39 +902,6 @@ export default function ExpenseWorkspace({
           </>
         )}
       </section>
-      {summary && !entry ? (
-        <section className="settlement">
-          <h2>Propuesta de devoluciones</h2>
-          <p>
-            Calculada desde gastos y pagos confirmados. Revisa el detalle en
-            Pagos y cierre.
-          </p>
-          {(["PEN", "USD"] as const).map((c) => (
-            <div key={c}>
-              <h3>
-                {c} ·{" "}
-                {summary[c].minimumProven
-                  ? "Mínimo probado"
-                  : "Propuesta optimizada"}
-              </h3>
-              {!summary[c].transfers.length ? (
-                <p>Sin transferencias pendientes en esta moneda.</p>
-              ) : (
-                <ul>
-                  {summary[c].transfers.map((t) => (
-                    <li key={t.senderId + t.receiverId}>
-                      <span>
-                        {name(t.senderId)} → {name(t.receiverId)}
-                      </span>
-                      <strong>{formatMoney(BigInt(t.amountMinor), c)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </section>
-      ) : null}
       <footer>CUSCO · CUENTAS CLARAS</footer>
     </main>
   );
