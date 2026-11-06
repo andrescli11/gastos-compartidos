@@ -66,9 +66,6 @@ export default function ExpenseWorkspace({
     Currency,
     CurrencySummary
   > | null>(null);
-  const [settlementMode, setSettlementMode] = useState<
-    "separate" | "consolidated"
-  >("separate");
   const [loading, setLoading] = useState(true),
     [message, setMessage] = useState(""),
     [fatal, setFatal] = useState("");
@@ -164,7 +161,6 @@ export default function ExpenseWorkspace({
         return api<SummaryResponse>("/api/summary").then((data) => {
           if (!abortRef.current) {
             setSummary(data.summary);
-            setSettlementMode(data.settlementMode ?? "separate");
           }
         });
       })
@@ -312,7 +308,6 @@ export default function ExpenseWorkspace({
       try {
         const data = await api<SummaryResponse>("/api/summary");
         setSummary(data.summary);
-        setSettlementMode(data.settlementMode ?? "separate");
       } catch (error) {
         invalidate(error);
       }
@@ -464,57 +459,105 @@ export default function ExpenseWorkspace({
 
   return (
     <main>
-      <header className="payment-header">
-        <Link className="brand" href="/" onNavigate={guardNavigation}>
-          C / Cusco
-        </Link>
-        <button
-          disabled={saving || uncertain || !!review}
-          onClick={() => void logout()}
-        >
-          Cerrar sesión
-        </button>
-      </header>
-      <nav className="actions dashboard-nav" aria-label="Navegación del viaje">
-        <Link href="/" onNavigate={guardNavigation}>
-          Inicio
-        </Link>
-        <Link href="/pagos" onNavigate={guardNavigation}>
-          Pagos y cierre
-        </Link>
-        {context.role === "admin" ? (
-          <Link href="/administrar" onNavigate={guardNavigation}>
-            Administrar accesos
+      <header className="home-header">
+        <div className="home-topbar">
+          <Link
+            className="home-logo"
+            href="/"
+            aria-label="Inicio"
+            onNavigate={guardNavigation}
+          >
+            <span aria-hidden="true">Logo</span>
           </Link>
-        ) : null}
-      </nav>
-      <section className="intro">
-        <p className="eyebrow">
-          {entry ? "INGRESAR GASTOS / INDIVIDUAL" : "RESUMEN DEL VIAJE"}
-        </p>
-        <h1>{entry ? "Un gasto, bien repartido." : "Todo en orden."}</h1>
-        <p>
-          {context.role === "admin"
-            ? "Administración"
-            : name(context.participantId ?? "")}{" "}
-          ·{" "}
-          {settlementMode === "consolidated"
-            ? "Liquidación consolidada en PEN."
-            : "Liquidación separada en PEN y USD."}
-        </p>
-        <Link
-          className={entry ? undefined : "primary-link"}
-          href="/gastos/nuevo"
-          onNavigate={guardNavigation}
-        >
-          {entry ? "Cambiar método de ingreso" : "Ingresar gastos"}
-        </Link>
-      </section>
+          <div className="home-account">
+            <span
+              className="home-account-name"
+              title={
+                context.role === "admin"
+                  ? "Administrador"
+                  : name(context.participantId ?? "")
+              }
+            >
+              {context.role === "admin"
+                ? "Administrador"
+                : name(context.participantId ?? "")}
+            </span>
+            {context.role === "admin" ? (
+              <Link
+                className="home-icon"
+                href="/administrar"
+                aria-label="Administración"
+                title="Administración"
+                onNavigate={guardNavigation}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="22"
+                  height="22"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="m9.5 3-.6 2.1-1.7 1L5 5.6 2.5 10l1.6 1.5v2L2.5 15 5 19.4l2.2-.5 1.7 1 .6 2.1h5l.6-2.1 1.7-1 2.2.5 2.5-4.4-1.6-1.5v-2L21.5 10 19 5.6l-2.2.5-1.7-1L14.5 3z" />
+                  <circle cx="12" cy="12.5" r="3" />
+                </svg>
+              </Link>
+            ) : null}
+            <button
+              className="home-icon"
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
+              disabled={saving || uncertain || !!review}
+              onClick={() => void logout()}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M12 3v9M6.3 5.8a8.5 8.5 0 1 0 11.4 0" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div className="home-heading">
+          <h1>Adiós Yacolino</h1>
+          <nav className="home-primary-actions" aria-label="Acciones del viaje">
+            <Link
+              className="primary-link"
+              href="/gastos/nuevo"
+              onNavigate={guardNavigation}
+            >
+              Ingresar gastos
+            </Link>
+            <Link
+              className="home-secondary-link"
+              href="/pagos"
+              onNavigate={guardNavigation}
+            >
+              Liquidar saldos
+            </Link>
+          </nav>
+        </div>
+      </header>
       <p role="status" className={message ? "notice" : ""}>
         {message}
       </p>
       {summary && !entry ? (
-        <section className="summary-grid" aria-label="Resumen por moneda">
+        <section
+          className="summary-grid home-kpis"
+          aria-label="Resumen por moneda"
+        >
           {(["PEN", "USD"] as const).map((c) => (
             <div className="summary-card" key={c}>
               <p className="eyebrow">TOTAL {c}</p>
