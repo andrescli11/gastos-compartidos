@@ -143,6 +143,10 @@ try {
 
     stage = "participant browser session";
     const aBrowser = await enter(a, viewport);
+    await aBrowser.page
+      .getByRole("link", { name: "Ingresar gastos", exact: true })
+      .click();
+    await aBrowser.page.getByRole("link", { name: /01 \/ INDIVIDUAL/ }).click();
     const description = `Browser expense ${suffix}`;
     await aBrowser.page
       .getByLabel("Descripción", { exact: true })
