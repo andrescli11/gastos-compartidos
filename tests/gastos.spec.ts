@@ -338,3 +338,44 @@ test("lote y archivo comparten la revisión y el enlace anterior sigue funcionan
     page.getByRole("heading", { name: "Borradores y resultados privados" }),
   ).toBeVisible();
 });
+
+test("tabla en escritorio y tarjetas en móvil conservan reparto y acciones", async ({
+  page,
+  isMobile,
+}) => {
+  await mockSession(page);
+  await page.route("**/api/expenses", (route) =>
+    route.fulfill({ json: { expenses: [expense] } }),
+  );
+  await page.goto("/gastos");
+  const table = page.locator(".expense-table-wrap");
+  const cards = page.locator(".expense-mobile");
+  if (isMobile) {
+    await expect(cards.locator("article")).toBeVisible();
+    await expect(table).not.toBeVisible();
+  } else {
+    await expect(table).toBeVisible();
+    await expect(cards).not.toBeVisible();
+    await expect(table.getByRole("columnheader")).toHaveText([
+      "Descripción",
+      "Fecha",
+      "Pagador",
+      "Importe",
+      "Origen",
+      "Reparto",
+      "Acciones",
+    ]);
+    await expect(table.getByRole("rowheader")).toHaveText("Cena fixture");
+  }
+  const visible = isMobile ? cards : table;
+  await visible.getByText("Ver reparto", { exact: true }).click();
+  await expect(visible.getByText("Fixture B", { exact: true })).toBeVisible();
+  await visible.getByRole("button", { name: "Editar", exact: true }).click();
+  await expect(page.getByLabel("Descripción", { exact: true })).toHaveValue(
+    "Cena fixture",
+  );
+  await page
+    .getByRole("button", { name: "Cancelar edición", exact: true })
+    .click();
+  await expect(page.getByLabel("Descripción", { exact: true })).toHaveCount(0);
+});

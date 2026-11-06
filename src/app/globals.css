@@ -446,3 +446,81 @@ fieldset {
     padding: 24px;
   }
 }
+
+.expense-table-wrap {
+  display: none;
+}
+@media (min-width: 900px) {
+  .expense-mobile {
+    display: none;
+  }
+  .expense-table-wrap {
+    display: block;
+    overflow-x: auto;
+    margin-top: 24px;
+    border: 1px solid #d4dbd1;
+    border-radius: 12px;
+    background: #fff;
+  }
+  .expense-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .expense-table th,
+  .expense-table td {
+    padding: 16px 12px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid #e4e7df;
+  }
+  .expense-table thead {
+    background: #edf0e7;
+  }
+  .expense-table tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+  .expense-table tbody tr:hover {
+    background: #f6f8f2;
+  }
+  .expense-table h3 {
+    font-size: 15px;
+    margin: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .expense-table .expense-money {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .expense-date {
+    white-space: nowrap;
+  }
+  .expense-table details {
+    min-width: 110px;
+  }
+  .expense-table summary {
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .expense-table details ul {
+    min-width: 150px;
+    margin-top: 12px;
+  }
+  .expense-table details li {
+    gap: 12px;
+  }
+  .expense-table .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .expense-table .actions button {
+    padding: 9px 12px;
+    margin: 0;
+  }
+  .expense-table-wrap:focus-visible {
+    outline: 3px solid #345c46;
+    outline-offset: 3px;
+  }
+}
