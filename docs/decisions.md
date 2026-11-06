@@ -137,3 +137,9 @@ PostgreSQL concede EXECUTE a PUBLIC por defecto de forma global; un REVOKE por e
 **Decisión:** `/` y `/gastos` muestran el dashboard. El CTA «Ingresar gastos» abre `/gastos/nuevo`, que reúne registro individual, lote manual/pegado e importación Excel/CSV. El lote y los archivos reutilizan la misma revisión privada y confirmación explícita. `/importar` redirige al flujo unificado; el simulador público se conserva en `/simulador`.
 
 **Consecuencias:** se elimina el asistente CSV duplicado del dashboard; edición/anulación y operaciones pendientes siguen disponibles con revisión. El inicio recibe las mismas cabeceras privadas sin caché que las demás pantallas autenticadas. Navegar desde un formulario con datos pide descartarlos; durante revisión o resultado incierto se conserva la operación. No cambia ningún contrato de API, cálculo monetario ni permiso de servidor.
+
+## ADR023 — Un solo formulario para uno o varios gastos
+
+**Decisión:** el CTA del dashboard abre directamente `/gastos/nuevo` con un gasto vacío. «+ Añadir otro gasto» agrega campos al mismo registro y la confirmación revisa el conjunto. Excel/CSV y la plantilla descargable quedan en una sección secundaria. Las rutas individuales y por lote anteriores redirigen a esta pantalla. La lista general permanece en el dashboard.
+
+**Consecuencias:** la entrada manual reutiliza los borradores privados versionados y la confirmación idempotente de importaciones. «Revisar gastos» reconoce los campos manuales sin advertencias; los archivos, duplicados y advertencias recalculadas por el servidor requieren reconocimiento por gasto antes de confirmar. No cambia el esquema ni los permisos y no se crean gastos definitivos al guardar borradores.

@@ -178,6 +178,33 @@ const warningText: Record<string, string> = {
   DUPLICATE_IN_BATCH:
     "Otra fila seleccionada de este lote tiene la misma fecha, importe y moneda.",
 };
+function manualExpense(session: Session, sourceRow = 1): EditableRow {
+  const row = editable({
+    id: crypto.randomUUID(),
+    description: "",
+    spentOn: "",
+    amountMinor: "",
+    currency: "PEN",
+    payerId: session.participantId ?? session.participants[0]?.id ?? "",
+    splits: [],
+    selected: true,
+    reviewed: false,
+    keepBoth: false,
+    evidence: "Entrada manual",
+    sourceRow,
+    warnings: [],
+    duplicateExpenseIds: [],
+  });
+  row.beneficiaries = session.participants.map((p) => p.id);
+  return row;
+}
+function needsAcknowledgement(row: EditableRow, sourceType: string) {
+  return (
+    sourceType !== "manual" ||
+    row.warnings.length > 0 ||
+    row.duplicateExpenseIds.length > 0
+  );
+}
 export default function ImportWorkspace() {
   const [session, setSession] = useState<Session | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
@@ -206,6 +233,7 @@ export default function ImportWorkspace() {
   });
   const [sheets, setSheets] = useState<Sheet[]>([]),
     [sheetId, setSheetId] = useState("");
+  const [excelOpen, setExcelOpen] = useState(false);
   const [sourceNote, setSourceNote] = useState("");
   const [sourceWarnings, setSourceWarnings] = useState<string[]>([]);
   const fail = useCallback((cause: unknown) => {
@@ -256,7 +284,7 @@ export default function ImportWorkspace() {
             "/api/imports?id=" + encodeURIComponent(saved.command.id),
           );
           if (active) acceptJob(response.job);
-        }
+        } else setRows([manualExpense(s)]);
       })
       .catch(fail)
       .finally(() => {
@@ -279,6 +307,7 @@ export default function ImportWorkspace() {
     if (loading || !session) return;
     const id = window.location.hash.slice(1);
     if (id === "manual-rows" || id === "prepare-data") {
+      if (id === "prepare-data") setExcelOpen(true);
       document.getElementById(id)?.scrollIntoView();
     }
   }, [loading, session]);
@@ -292,7 +321,7 @@ export default function ImportWorkspace() {
     ? selected.some(
         (r) =>
           rowErrors(r, session).length ||
-          !r.reviewed ||
+          (needsAcknowledgement(r, sourceType) && !r.reviewed) ||
           ((r.duplicateExpenseIds.length > 0 ||
             r.warnings.includes("DUPLICATE_IN_BATCH")) &&
             !r.keepBoth),
@@ -307,7 +336,7 @@ export default function ImportWorkspace() {
       totals[row.currency] += BigInt(row.amountMinor);
   function reset() {
     setJob(null);
-    setRows([]);
+    setRows(session ? [manualExpense(session)] : []);
     setDirty(false);
     setReview(false);
     setConfirmed(false);
@@ -354,25 +383,14 @@ export default function ImportWorkspace() {
   }
   function addRow() {
     if (!session || rows.length >= 200) return;
-    const row: ImportRow = {
-      id: crypto.randomUUID(),
-      description: "",
-      spentOn: "",
-      amountMinor: "",
-      currency: "PEN",
-      payerId: session.participantId ?? session.participants[0]?.id ?? "",
-      splits: [],
-      selected: false,
-      reviewed: false,
-      keepBoth: false,
-      evidence: "Entrada manual",
-      sourceRow: Math.max(0, ...rows.map((value) => value.sourceRow)) + 1,
-      warnings: [],
-      duplicateExpenseIds: [],
-    };
-    const value = editable(row);
-    value.beneficiaries = session.participants.map((p) => p.id);
+    const value = manualExpense(
+      session,
+      Math.max(0, ...rows.map((r) => r.sourceRow)) + 1,
+    );
     setRows((current) => [...current, value]);
+    requestAnimationFrame(() =>
+      document.getElementById(`description-${value.id}`)?.focus(),
+    );
     setDirty(true);
     setReview(false);
     setConfirmed(false);
@@ -517,9 +535,29 @@ export default function ImportWorkspace() {
             operation: "save",
             id: job.id,
             expectedVersion: job.version,
-            rows: rows.map(payload),
+            rows: rows.map((row) => {
+              const value = payload(row);
+              return forReview &&
+                sourceType === "manual" &&
+                !needsAcknowledgement(row, sourceType) &&
+                row.selected
+                ? { ...value, reviewed: true }
+                : value;
+            }),
           }
-        : { operation: "create", sourceType, rows: rows.map(payload) };
+        : {
+            operation: "create",
+            sourceType,
+            rows: rows.map((row) => {
+              const value = payload(row);
+              return forReview &&
+                sourceType === "manual" &&
+                !needsAcknowledgement(row, sourceType) &&
+                row.selected
+                ? { ...value, reviewed: true }
+                : value;
+            }),
+          };
       const response = await api<{ job: ImportJob }>("/api/imports", {
         method: "POST",
         headers: requestHeaders(crypto.randomUUID()),
@@ -636,7 +674,7 @@ export default function ImportWorkspace() {
       setMessage(
         failed
           ? `Resultado parcial: ${failed} filas requieren corrección. Las filas guardadas no se volverán a importar.`
-          : "Importación confirmada. Los gastos se guardaron en el libro del viaje.",
+          : "Gastos guardados. Ya puedes verlos en el dashboard.",
       );
     } catch (cause) {
       if (
@@ -694,27 +732,43 @@ export default function ImportWorkspace() {
           className="brand"
           href="/"
           onNavigate={(event) => {
-            if (dirty || busy || uncertain) event.preventDefault();
+            if (
+              busy ||
+              uncertain ||
+              (dirty &&
+                !window.confirm(
+                  "Hay cambios sin guardar. ¿Quieres descartarlos y volver al dashboard?",
+                ))
+            )
+              event.preventDefault();
           }}
         >
           C / <span>Cusco</span>
         </Link>
         <Link
           className="badge"
-          href="/gastos/nuevo"
+          href="/"
           onNavigate={(event) => {
-            if (dirty || busy || uncertain) event.preventDefault();
+            if (
+              busy ||
+              uncertain ||
+              (dirty &&
+                !window.confirm(
+                  "Hay cambios sin guardar. ¿Quieres descartarlos y volver al dashboard?",
+                ))
+            )
+              event.preventDefault();
           }}
         >
-          Cambiar método de ingreso
+          Volver al dashboard
         </Link>
       </header>
       <section className="intro">
-        <p className="eyebrow">INGRESAR GASTOS / LOTE O ARCHIVO</p>
-        <h1>Gastos por lote.</h1>
+        <p className="eyebrow">CUENTAS DEL VIAJE</p>
+        <h1>Ingresar gastos</h1>
         <p>
-          Prepara varias filas, revisa su evidencia y confirma exactamente lo
-          que quieres incorporar al viaje.
+          Registra un gasto y confírmalo, o añade más con el botón +. Revisarás
+          el reparto antes de guardar.
         </p>
       </section>
       {loading ? <p role="status">Cargando importaciones privadas…</p> : null}
@@ -724,8 +778,15 @@ export default function ImportWorkspace() {
         </p>
       ) : null}
       {message ? <p role="status">{message}</p> : null}
+      {job?.state === "persisted" ? (
+        <p>
+          <Link className="primary-link" href="/">
+            Ver gastos en el dashboard
+          </Link>
+        </p>
+      ) : null}
       {!loading && !session ? (
-        <p>Abre tu enlace privado para acceder a las importaciones.</p>
+        <p>Abre tu enlace privado para registrar gastos.</p>
       ) : null}
       {session ? (
         <>
@@ -742,50 +803,445 @@ export default function ImportWorkspace() {
               </button>
             </section>
           ) : null}
-          <section className="settlement">
-            <h2>Borradores y resultados privados</h2>
-            <p>
-              Los borradores caducan a los siete días. Guardar un borrador no
-              registra gastos.
-            </p>
+          <section className="settlement" id="manual-rows">
+            <h2>Tus gastos</h2>
+            {job ? (
+              <p className="hint">
+                Caducidad: {new Date(job.expiresAt).toLocaleString("es-PE")}
+              </p>
+            ) : null}
+            <fieldset disabled={locked} style={{ minWidth: 0 }}>
+              {rows.map((row, index) => (
+                <article
+                  className="expense-card entry-expense-card"
+                  key={row.id}
+                >
+                  <h3>
+                    Gasto {index + 1}
+                    {completed.has(row.id) ? " · Guardada" : ""}
+                  </h3>
+                  {!completed.has(row.id) ? (
+                    <>
+                      <div className="entry-card-heading-actions">
+                        {sourceType !== "manual" ? (
+                          <label>
+                            <input
+                              type="checkbox"
+                              aria-label={`Seleccionar gasto ${index + 1}`}
+                              checked={row.selected}
+                              onChange={(e) =>
+                                change(
+                                  row.id,
+                                  { selected: e.target.checked },
+                                  false,
+                                )
+                              }
+                            />{" "}
+                            Incluir este gasto
+                          </label>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={rows.length === 1}
+                          aria-label={`Quitar gasto ${index + 1}`}
+                          onClick={() => {
+                            setRows((current) =>
+                              current.filter((r) => r.id !== row.id),
+                            );
+                            setDirty(true);
+                            setReview(false);
+                            setConfirmed(false);
+                          }}
+                        >
+                          Quitar gasto
+                        </button>
+                      </div>
+                      <div className="entry-expense-fields">
+                        <label htmlFor={`description-${row.id}`}>
+                          Descripción
+                          <input
+                            id={`description-${row.id}`}
+                            aria-label={`Descripción gasto ${index + 1}`}
+                            maxLength={240}
+                            value={row.description}
+                            onChange={(e) =>
+                              change(row.id, { description: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label htmlFor={`date-${row.id}`}>
+                          Fecha
+                          <input
+                            id={`date-${row.id}`}
+                            aria-label={`Fecha gasto ${index + 1}`}
+                            type="date"
+                            min="2000-01-01"
+                            max="2100-12-31"
+                            value={row.spentOn}
+                            onChange={(e) =>
+                              change(row.id, { spentOn: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label htmlFor={`amount-${row.id}`}>
+                          Importe
+                          <input
+                            id={`amount-${row.id}`}
+                            aria-label={`Importe gasto ${index + 1}`}
+                            inputMode="decimal"
+                            value={row.amountText}
+                            onChange={(e) => {
+                              const text = e.target.value;
+                              let minor = "";
+                              try {
+                                minor = parseMoney(text).toString();
+                              } catch {}
+                              change(row.id, {
+                                amountText: text,
+                                amountMinor: minor,
+                                ...(!row.custom
+                                  ? {
+                                      splits: equalParts(
+                                        row,
+                                        row.beneficiaries,
+                                        text,
+                                      ),
+                                    }
+                                  : {}),
+                              });
+                            }}
+                          />
+                        </label>
+                        <label htmlFor={`currency-${row.id}`}>
+                          Moneda
+                          <select
+                            id={`currency-${row.id}`}
+                            aria-label={`Moneda gasto ${index + 1}`}
+                            value={row.currency}
+                            onChange={(e) =>
+                              change(row.id, {
+                                currency: e.target.value as Currency,
+                              })
+                            }
+                          >
+                            <option value="">Seleccionar</option>
+                            <option>PEN</option>
+                            <option>USD</option>
+                          </select>
+                        </label>
+                      </div>
+                    </>
+                  ) : (
+                    <p>
+                      {row.description} · {row.spentOn} ·{" "}
+                      {partMoney(row.amountMinor, row.currency)}
+                    </p>
+                  )}
+                  {sourceType !== "manual" ? (
+                    <details>
+                      <summary>Origen y evidencia de gasto {index + 1}</summary>
+                      <p>
+                        {row.sourceSheet ? `Hoja ${row.sourceSheet} · ` : ""}
+                        Fila de origen {row.sourceRow}
+                      </p>
+                      <pre className="literal">{row.evidence}</pre>
+                    </details>
+                  ) : null}
+                  {!completed.has(row.id) ? (
+                    <>
+                      <div className="filters">
+                        <label htmlFor={`payer-${row.id}`}>
+                          Pagador gasto {index + 1}
+                        </label>
+                        <select
+                          id={`payer-${row.id}`}
+                          disabled={session.role !== "admin"}
+                          value={row.payerId}
+                          onChange={(e) =>
+                            change(row.id, { payerId: e.target.value })
+                          }
+                        >
+                          {session.participants.map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {person.displayName}
+                            </option>
+                          ))}
+                        </select>
+                        <label className="person">
+                          <span>Reparto personalizado gasto {index + 1}</span>
+                          <input
+                            type="checkbox"
+                            checked={row.custom}
+                            onChange={(e) =>
+                              change(row.id, {
+                                custom: e.target.checked,
+                                ...(!e.target.checked
+                                  ? {
+                                      splits: equalParts(
+                                        row,
+                                        row.beneficiaries,
+                                      ),
+                                    }
+                                  : {}),
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <fieldset>
+                        <legend>Beneficiarios gasto {index + 1}</legend>
+                        {session.participants.map((person) => (
+                          <div className="person" key={person.id}>
+                            <label>
+                              <input
+                                type="checkbox"
+                                aria-label={`${person.displayName} en gasto ${index + 1}`}
+                                checked={row.beneficiaries.includes(person.id)}
+                                onChange={(e) => {
+                                  const ids = e.target.checked
+                                    ? [...row.beneficiaries, person.id]
+                                    : row.beneficiaries.filter(
+                                        (id) => id !== person.id,
+                                      );
+                                  change(row.id, {
+                                    beneficiaries: ids,
+                                    splits: row.custom
+                                      ? row.splits.filter((s) =>
+                                          ids.includes(s.participantId),
+                                        )
+                                      : equalParts(row, ids),
+                                  });
+                                }}
+                              />
+                              {person.displayName}
+                            </label>
+                            {row.custom &&
+                            row.beneficiaries.includes(person.id) ? (
+                              <input
+                                className="custom-amount"
+                                aria-label={`Parte de ${person.displayName} gasto ${index + 1}`}
+                                inputMode="decimal"
+                                value={
+                                  row.customAmounts[person.id] ??
+                                  decimal(
+                                    row.splits.find(
+                                      (s) => s.participantId === person.id,
+                                    )?.amountMinor ?? "",
+                                  )
+                                }
+                                onChange={(e) => {
+                                  let amountMinor = "";
+                                  try {
+                                    amountMinor = parseMoney(
+                                      e.target.value,
+                                    ).toString();
+                                  } catch {}
+                                  change(row.id, {
+                                    customAmounts: {
+                                      ...row.customAmounts,
+                                      [person.id]: e.target.value,
+                                    },
+                                    splits: [
+                                      ...row.splits.filter(
+                                        (s) => s.participantId !== person.id,
+                                      ),
+                                      { participantId: person.id, amountMinor },
+                                    ],
+                                  });
+                                }}
+                              />
+                            ) : (
+                              <span>
+                                {partMoney(
+                                  row.splits.find(
+                                    (s) => s.participantId === person.id,
+                                  )?.amountMinor,
+                                  row.currency,
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </fieldset>
+                      {(row.description || row.amountText || row.spentOn) &&
+                      rowErrors(row, session).length ? (
+                        <ul className="error">
+                          {rowErrors(row, session).map((text) => (
+                            <li key={text}>{text}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {row.warnings.length ? (
+                        <ul>
+                          {row.warnings.map((code) => (
+                            <li key={code}>{warningText[code] ?? code}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {row.duplicateExpenseIds.length ||
+                      row.warnings.includes("DUPLICATE_IN_BATCH") ? (
+                        <div className="notice">
+                          <p>
+                            Hay posibles duplicados por fecha, importe y moneda:{" "}
+                            {row.duplicateExpenseIds.length} gastos existentes
+                            {row.warnings.includes("DUPLICATE_IN_BATCH")
+                              ? " y otras filas de este lote"
+                              : ""}
+                            . Revisa las coincidencias antes de conservar ambos.
+                          </p>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={row.keepBoth}
+                              onChange={(e) =>
+                                change(
+                                  row.id,
+                                  {
+                                    keepBoth: e.target.checked,
+                                    reviewed: false,
+                                  },
+                                  false,
+                                )
+                              }
+                            />
+                            Mantener ambos en gasto {index + 1}
+                          </label>
+                        </div>
+                      ) : null}
+                      {needsAcknowledgement(row, sourceType) ? (
+                        <label className="person">
+                          <span>
+                            He revisado datos, reparto y advertencias del gasto{" "}
+                            {index + 1}; representa un gasto.
+                          </span>
+                          <input
+                            type="checkbox"
+                            aria-label={`He revisado gasto ${index + 1}`}
+                            checked={row.reviewed}
+                            onChange={(e) =>
+                              change(
+                                row.id,
+                                { reviewed: e.target.checked },
+                                false,
+                              )
+                            }
+                          />
+                        </label>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {job?.results
+                    .filter((result) => result.rowId === row.id)
+                    .map((result) => (
+                      <p key={result.rowId}>
+                        {result.status === "persisted"
+                          ? "Gasto guardado."
+                          : `No guardada: ${result.code ?? "revisa esta fila"}.`}
+                      </p>
+                    ))}
+                </article>
+              ))}
+            </fieldset>
+            <button
+              className="entry-add-expense"
+              aria-label="Añadir otro gasto"
+              disabled={locked || rows.length >= 200}
+              onClick={addRow}
+            >
+              <span aria-hidden="true">+</span> Añadir otro gasto
+            </button>
+            <div className="notice">
+              <strong>
+                {selected.length}{" "}
+                {selected.length === 1
+                  ? "gasto para registrar"
+                  : "gastos para registrar"}
+              </strong>
+              <p>
+                PEN: {formatMoney(totals.PEN, "PEN")} · USD:{" "}
+                {formatMoney(totals.USD, "USD")}
+              </p>
+            </div>
             <div className="actions">
-              <button disabled={busy || dirty || uncertain} onClick={reset}>
-                Nuevo lote
+              {job && job.state === "preview" ? (
+                <button
+                  disabled={busy || uncertain}
+                  onClick={() => void openJob(job.id)}
+                >
+                  Descartar cambios locales y recargar borrador
+                </button>
+              ) : null}
+              <button
+                disabled={
+                  locked ||
+                  !rows.some((r) => r.description || r.amountText || r.spentOn)
+                }
+                onClick={() => void save()}
+              >
+                Guardar borrador privado
               </button>
               <button
-                disabled={busy || uncertain}
-                onClick={() => void refreshJobs()}
+                disabled={locked || !selected.length || invalid}
+                onClick={() => void save(true)}
               >
-                Actualizar lista de borradores
+                Revisar gastos
               </button>
-              {jobs.map((value) => (
-                <button
-                  key={value.id}
-                  disabled={busy || dirty || uncertain}
-                  onClick={() => void openJob(value.id)}
-                >
-                  Abrir {value.sourceType} ·{" "}
-                  {value.state === "preview"
-                    ? "borrador"
-                    : value.state === "persisted"
-                      ? "guardado"
-                      : value.state === "cancelled"
-                        ? "cancelado"
-                        : "caducado"}{" "}
-                  · {new Date(value.createdAt).toLocaleDateString("es-PE")}
-                </button>
-              ))}
+              <button
+                disabled={
+                  busy ||
+                  uncertain ||
+                  job?.state === "persisted" ||
+                  job?.state === "cancelled" ||
+                  job?.state === "expired"
+                }
+                onClick={() => void cancel()}
+              >
+                {job ? "Cancelar registro" : "Descartar cambios"}
+              </button>
             </div>
-            {dirty ? (
-              <p className="hint">
-                Hay cambios sin guardar. Guarda el borrador o descártalo antes
-                de cambiar de pantalla o abrir otro lote.
-              </p>
+            {review && job ? (
+              <section
+                className="confirmation"
+                aria-labelledby="confirm-import-title"
+              >
+                <h3 id="confirm-import-title">Confirma tus gastos</h3>
+                <p>
+                  Se guardarán {selected.length} gastos por{" "}
+                  {formatMoney(totals.PEN, "PEN")} y{" "}
+                  {formatMoney(totals.USD, "USD")}. El borrador por sí solo no
+                  registra movimientos.
+                </p>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={confirmed}
+                    disabled={busy}
+                    onChange={(e) => setConfirmed(e.target.checked)}
+                  />
+                  Confirmo registrar estos gastos revisados.
+                </label>
+                <button
+                  disabled={!confirmed || busy || uncertain}
+                  onClick={() => void confirm()}
+                >
+                  Confirmar gastos
+                </button>
+              </section>
             ) : null}
           </section>
           {!job || job.state === "preview" ? (
-            <section className="settlement" id="prepare-data">
-              <h2>Preparar datos</h2>
+            <details
+              className="entry-excel-secondary"
+              id="prepare-data"
+              open={excelOpen}
+              onToggle={(event) => setExcelOpen(event.currentTarget.open)}
+            >
+              <summary>¿Prefieres usar Excel?</summary>
+              <h2>Importar desde Excel o CSV</h2>
+              <p>
+                ¿Prefieres llenar tus gastos en Excel y subirlos? Descarga la
+                plantilla.
+              </p>
               <p>
                 <a
                   href="/api/imports/template"
@@ -798,7 +1254,20 @@ export default function ImportWorkspace() {
                 Completa la hoja Gastos y cárgala aquí. Revisarás el reparto
                 antes de guardar. La plantilla incluye instrucciones.
               </p>
-              <fieldset disabled={locked || !!job || rows.length > 0}>
+              {sourceType === "manual" &&
+              rows.some((r) => r.description || r.spentOn || r.amountText) ? (
+                <p className="notice">
+                  Para cargar un archivo, termina este registro o descarta sus
+                  cambios primero.
+                </p>
+              ) : null}
+              <fieldset
+                disabled={
+                  locked ||
+                  !!job ||
+                  rows.some((r) => r.description || r.spentOn || r.amountText)
+                }
+              >
                 <p>
                   CSV (hasta 15 MB) se procesa en este navegador. Excel (hasta 4
                   MB) se procesa en el servidor, sin ejecutar fórmulas ni
@@ -944,414 +1413,53 @@ export default function ImportWorkspace() {
                   ))}
                 </ul>
               ) : null}
-            </section>
+            </details>
           ) : null}
-          <section className="settlement" id="manual-rows">
-            <h2>Revisión de filas{job ? ` · versión ${job.version}` : ""}</h2>
-            {job ? (
-              <p className="hint">
-                Caducidad: {new Date(job.expiresAt).toLocaleString("es-PE")}
-              </p>
-            ) : null}
-            <fieldset disabled={locked} style={{ minWidth: 0 }}>
-              <button disabled={rows.length >= 200} onClick={addRow}>
-                Añadir fila manual
-              </button>
-              <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-                <table
-                  style={{
-                    width: "100%",
-                    borderSpacing: "8px",
-                    textAlign: "left",
-                  }}
-                >
-                  <caption>
-                    Datos del lote. Selecciona y revisa cada fila que quieras
-                    guardar.
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Seleccionar</th>
-                      <th scope="col">Descripción</th>
-                      <th scope="col">Fecha</th>
-                      <th scope="col">Importe</th>
-                      <th scope="col">Moneda</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, index) => (
-                      <tr key={row.id}>
-                        <td>
-                          <input
-                            type="checkbox"
-                            aria-label={`Seleccionar fila ${index + 1}`}
-                            checked={row.selected}
-                            disabled={completed.has(row.id)}
-                            onChange={(e) =>
-                              change(
-                                row.id,
-                                { selected: e.target.checked },
-                                false,
-                              )
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`Descripción fila ${index + 1}`}
-                            value={row.description}
-                            maxLength={240}
-                            disabled={completed.has(row.id)}
-                            onChange={(e) =>
-                              change(row.id, { description: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="date"
-                            min="2000-01-01"
-                            max="2100-12-31"
-                            aria-label={`Fecha fila ${index + 1}`}
-                            value={row.spentOn}
-                            disabled={completed.has(row.id)}
-                            onChange={(e) =>
-                              change(row.id, { spentOn: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`Importe fila ${index + 1}`}
-                            inputMode="decimal"
-                            value={row.amountText}
-                            disabled={completed.has(row.id)}
-                            onChange={(e) => {
-                              const text = e.target.value;
-                              let minor = "";
-                              try {
-                                minor = parseMoney(text).toString();
-                              } catch {}
-                              change(row.id, {
-                                amountText: text,
-                                amountMinor: minor,
-                                ...(!row.custom
-                                  ? {
-                                      splits: equalParts(
-                                        row,
-                                        row.beneficiaries,
-                                        text,
-                                      ),
-                                    }
-                                  : {}),
-                              });
-                            }}
-                          />
-                        </td>
-                        <td>
-                          <select
-                            style={{ width: "100%" }}
-                            aria-label={`Moneda fila ${index + 1}`}
-                            value={row.currency}
-                            disabled={completed.has(row.id)}
-                            onChange={(e) =>
-                              change(row.id, {
-                                currency: e.target.value as Currency,
-                              })
-                            }
-                          >
-                            <option value="">Seleccionar</option>
-                            <option>PEN</option>
-                            <option>USD</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {rows.map((row, index) => (
-                <article className="expense-card" key={row.id}>
-                  <h3>
-                    Fila {index + 1}
-                    {completed.has(row.id) ? " · Guardada" : ""}
-                  </h3>
-                  <details>
-                    <summary>Origen y evidencia de fila {index + 1}</summary>
-                    <p>
-                      {row.sourceSheet ? `Hoja ${row.sourceSheet} · ` : ""}Fila
-                      de origen {row.sourceRow}
-                    </p>
-                    <pre className="literal">{row.evidence}</pre>
-                  </details>
-                  {!completed.has(row.id) ? (
-                    <>
-                      <div className="filters">
-                        <label htmlFor={`payer-${row.id}`}>
-                          Pagador fila {index + 1}
-                        </label>
-                        <select
-                          id={`payer-${row.id}`}
-                          disabled={session.role !== "admin"}
-                          value={row.payerId}
-                          onChange={(e) =>
-                            change(row.id, { payerId: e.target.value })
-                          }
-                        >
-                          {session.participants.map((person) => (
-                            <option key={person.id} value={person.id}>
-                              {person.displayName}
-                            </option>
-                          ))}
-                        </select>
-                        <label className="person">
-                          <span>Reparto personalizado fila {index + 1}</span>
-                          <input
-                            type="checkbox"
-                            checked={row.custom}
-                            onChange={(e) =>
-                              change(row.id, {
-                                custom: e.target.checked,
-                                ...(!e.target.checked
-                                  ? {
-                                      splits: equalParts(
-                                        row,
-                                        row.beneficiaries,
-                                      ),
-                                    }
-                                  : {}),
-                              })
-                            }
-                          />
-                        </label>
-                      </div>
-                      <fieldset>
-                        <legend>Beneficiarios fila {index + 1}</legend>
-                        {session.participants.map((person) => (
-                          <div className="person" key={person.id}>
-                            <label>
-                              <input
-                                type="checkbox"
-                                aria-label={`${person.displayName} en fila ${index + 1}`}
-                                checked={row.beneficiaries.includes(person.id)}
-                                onChange={(e) => {
-                                  const ids = e.target.checked
-                                    ? [...row.beneficiaries, person.id]
-                                    : row.beneficiaries.filter(
-                                        (id) => id !== person.id,
-                                      );
-                                  change(row.id, {
-                                    beneficiaries: ids,
-                                    splits: row.custom
-                                      ? row.splits.filter((s) =>
-                                          ids.includes(s.participantId),
-                                        )
-                                      : equalParts(row, ids),
-                                  });
-                                }}
-                              />
-                              {person.displayName}
-                            </label>
-                            {row.custom &&
-                            row.beneficiaries.includes(person.id) ? (
-                              <input
-                                className="custom-amount"
-                                aria-label={`Parte de ${person.displayName} fila ${index + 1}`}
-                                inputMode="decimal"
-                                value={
-                                  row.customAmounts[person.id] ??
-                                  decimal(
-                                    row.splits.find(
-                                      (s) => s.participantId === person.id,
-                                    )?.amountMinor ?? "",
-                                  )
-                                }
-                                onChange={(e) => {
-                                  let amountMinor = "";
-                                  try {
-                                    amountMinor = parseMoney(
-                                      e.target.value,
-                                    ).toString();
-                                  } catch {}
-                                  change(row.id, {
-                                    customAmounts: {
-                                      ...row.customAmounts,
-                                      [person.id]: e.target.value,
-                                    },
-                                    splits: [
-                                      ...row.splits.filter(
-                                        (s) => s.participantId !== person.id,
-                                      ),
-                                      { participantId: person.id, amountMinor },
-                                    ],
-                                  });
-                                }}
-                              />
-                            ) : (
-                              <span>
-                                {partMoney(
-                                  row.splits.find(
-                                    (s) => s.participantId === person.id,
-                                  )?.amountMinor,
-                                  row.currency,
-                                )}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </fieldset>
-                      {rowErrors(row, session).length ? (
-                        <ul className="error">
-                          {rowErrors(row, session).map((text) => (
-                            <li key={text}>{text}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      {row.warnings.length ? (
-                        <ul>
-                          {row.warnings.map((code) => (
-                            <li key={code}>{warningText[code] ?? code}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      {row.duplicateExpenseIds.length ||
-                      row.warnings.includes("DUPLICATE_IN_BATCH") ? (
-                        <div className="notice">
-                          <p>
-                            Hay posibles duplicados por fecha, importe y moneda:{" "}
-                            {row.duplicateExpenseIds.length} gastos existentes
-                            {row.warnings.includes("DUPLICATE_IN_BATCH")
-                              ? " y otras filas de este lote"
-                              : ""}
-                            . Revisa las coincidencias antes de conservar ambos.
-                          </p>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={row.keepBoth}
-                              onChange={(e) =>
-                                change(
-                                  row.id,
-                                  {
-                                    keepBoth: e.target.checked,
-                                    reviewed: false,
-                                  },
-                                  false,
-                                )
-                              }
-                            />
-                            Mantener ambos en fila {index + 1}
-                          </label>
-                        </div>
-                      ) : null}
-                      <label className="person">
-                        <span>
-                          He revisado datos, reparto y advertencias de la fila{" "}
-                          {index + 1}; representa un gasto.
-                        </span>
-                        <input
-                          type="checkbox"
-                          aria-label={`He revisado fila ${index + 1}`}
-                          checked={row.reviewed}
-                          onChange={(e) =>
-                            change(
-                              row.id,
-                              { reviewed: e.target.checked },
-                              false,
-                            )
-                          }
-                        />
-                      </label>
-                    </>
-                  ) : null}
-                  {job?.results
-                    .filter((result) => result.rowId === row.id)
-                    .map((result) => (
-                      <p key={result.rowId}>
-                        {result.status === "persisted"
-                          ? "Gasto guardado."
-                          : `No guardada: ${result.code ?? "revisa esta fila"}.`}
-                      </p>
-                    ))}
-                </article>
-              ))}
-            </fieldset>
-            <div className="notice">
-              <strong>{selected.length} filas seleccionadas</strong>
-              <p>
-                PEN: {formatMoney(totals.PEN, "PEN")} · USD:{" "}
-                {formatMoney(totals.USD, "USD")}
-              </p>
-            </div>
+          <details className="entry-drafts">
+            <summary>Recuperar borradores</summary>
+            <h2>Borradores y resultados privados</h2>
+            <p>
+              Los borradores caducan a los siete días. Guardar un borrador no
+              registra gastos.
+            </p>
             <div className="actions">
-              {job && job.state === "preview" ? (
+              <button disabled={busy || dirty || uncertain} onClick={reset}>
+                Nuevo registro
+              </button>
+              <button
+                disabled={busy || uncertain}
+                onClick={() => void refreshJobs()}
+              >
+                Actualizar lista de borradores
+              </button>
+              {jobs.map((value) => (
                 <button
-                  disabled={busy || uncertain}
-                  onClick={() => void openJob(job.id)}
+                  key={value.id}
+                  disabled={busy || dirty || uncertain}
+                  onClick={() => void openJob(value.id)}
                 >
-                  Descartar cambios locales y recargar borrador
+                  Abrir {value.sourceType} ·{" "}
+                  {value.state === "preview"
+                    ? "borrador"
+                    : value.state === "persisted"
+                      ? "guardado"
+                      : value.state === "cancelled"
+                        ? "cancelado"
+                        : "caducado"}{" "}
+                  · {new Date(value.createdAt).toLocaleDateString("es-PE")}
                 </button>
-              ) : null}
-              <button
-                disabled={locked || !rows.length}
-                onClick={() => void save()}
-              >
-                Guardar borrador privado
-              </button>
-              <button
-                disabled={locked || !selected.length || invalid}
-                onClick={() => void save(true)}
-              >
-                Revisar selección
-              </button>
-              <button
-                disabled={
-                  busy ||
-                  uncertain ||
-                  job?.state === "persisted" ||
-                  job?.state === "cancelled" ||
-                  job?.state === "expired"
-                }
-                onClick={() => void cancel()}
-              >
-                {job ? "Cancelar importación" : "Descartar filas sin guardar"}
-              </button>
+              ))}
             </div>
-            {review && job ? (
-              <section
-                className="confirmation"
-                aria-labelledby="confirm-import-title"
-              >
-                <h3 id="confirm-import-title">
-                  Confirmar versión {job.version}
-                </h3>
-                <p>
-                  Se guardarán {selected.length} gastos por{" "}
-                  {formatMoney(totals.PEN, "PEN")} y{" "}
-                  {formatMoney(totals.USD, "USD")}. El borrador por sí solo no
-                  registra movimientos.
-                </p>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={confirmed}
-                    disabled={busy}
-                    onChange={(e) => setConfirmed(e.target.checked)}
-                  />
-                  Confirmo incorporar estas filas revisadas al libro del viaje.
-                </label>
-                <button
-                  disabled={!confirmed || busy || uncertain}
-                  onClick={() => void confirm()}
-                >
-                  Confirmar gastos seleccionados
-                </button>
-              </section>
+            {dirty ? (
+              <p className="hint">
+                Hay cambios sin guardar. Guarda el borrador o descártalo antes
+                de cambiar de pantalla o abrir otro lote.
+              </p>
             ) : null}
-          </section>
+          </details>
         </>
       ) : null}
-      <footer>CUSCO · IMPORTACIÓN PRIVADA</footer>
+      <footer>CUSCO · REGISTRO DE GASTOS</footer>
     </main>
   );
 }

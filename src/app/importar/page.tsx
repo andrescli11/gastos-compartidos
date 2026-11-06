@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
-export default function ImportPage() {
-  redirect("/gastos/nuevo/lote");
+export default function LegacyEntryPage() {
+  redirect("/gastos/nuevo");
 }

@@ -22,15 +22,16 @@ function draft(rows: ImportRow[], version = 1): ImportJob {
     results: [],
   };
 }
-async function fillRow(page: Page) {
+async function fillRow(page: Page, index = 1) {
   await page
-    .getByRole("button", { name: "Añadir fila manual", exact: true })
-    .click();
-  await page.getByLabel("Descripción fila 1", { exact: true }).fill("Cena");
-  await page.getByLabel("Fecha fila 1", { exact: true }).fill("2026-01-02");
-  await page.getByLabel("Importe fila 1", { exact: true }).fill("10.01");
-  await page.getByLabel("Seleccionar fila 1", { exact: true }).check();
-  await page.getByLabel("He revisado fila 1", { exact: true }).check();
+    .getByLabel(`Descripción gasto ${index}`, { exact: true })
+    .fill(index === 1 ? "Cena" : "Taxi");
+  await page
+    .getByLabel(`Fecha gasto ${index}`, { exact: true })
+    .fill("2026-01-02");
+  await page
+    .getByLabel(`Importe gasto ${index}`, { exact: true })
+    .fill("10.01");
 }
 test("batch draft is private and creates expenses only after explicit version confirmation", async ({
   page,
@@ -65,7 +66,7 @@ test("batch draft is private and creates expenses only after explicit version co
       };
     return r.fulfill({ json: { job: current } });
   });
-  await page.goto("/importar");
+  await page.goto("/gastos/nuevo");
   await fillRow(page);
   await page
     .getByRole("button", { name: "Guardar borrador privado", exact: true })
@@ -84,32 +85,29 @@ test("batch draft is private and creates expenses only after explicit version co
     ],
   });
   await page
-    .getByRole("button", { name: "Revisar selección", exact: true })
+    .getByRole("button", { name: "Revisar gastos", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Confirmar versión 2", exact: true }),
+    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", {
-      name: "Confirmar gastos seleccionados",
+      name: "Confirmar gastos",
       exact: true,
     }),
   ).toBeDisabled();
   expect(commands.map((c) => c.operation)).toEqual(["create", "save"]);
   await page
-    .getByLabel(
-      "Confirmo incorporar estas filas revisadas al libro del viaje.",
-      { exact: true },
-    )
+    .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
     .check();
   await page
     .getByRole("button", {
-      name: "Confirmar gastos seleccionados",
+      name: "Confirmar gastos",
       exact: true,
     })
     .click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Importación confirmada" }),
+    page.getByRole("status").filter({ hasText: "Gastos guardados." }),
   ).toBeVisible();
   expect(commands[2]).toEqual({
     operation: "confirm",
@@ -117,8 +115,75 @@ test("batch draft is private and creates expenses only after explicit version co
     expectedVersion: 2,
   });
   await expect(
-    page.getByLabel("Pagador fila 1", { exact: true }),
+    page.getByLabel("Pagador gasto 1", { exact: true }),
   ).not.toBeVisible();
+});
+test("un mismo flujo permite añadir, quitar y confirmar dos gastos", async ({
+  page,
+}) => {
+  let current = draft([]);
+  const commands: Record<string, unknown>[] = [];
+  await page.route("**/api/session", (r) => r.fulfill({ json: session }));
+  await page.route("**/api/imports**", (r) => {
+    if (r.request().method() === "GET")
+      return r.fulfill({ json: { jobs: [] } });
+    const command = r.request().postDataJSON();
+    commands.push(command);
+    if (command.operation === "create") current = draft(command.rows);
+    if (command.operation === "confirm")
+      current = {
+        ...current,
+        state: "persisted",
+        version: 2,
+        results: current.rows.map((row, i) => ({
+          rowId: row.id,
+          status: "persisted",
+          expenseId: `20000000-0000-4000-8000-00000000000${i + 1}`,
+        })),
+      };
+    return r.fulfill({ json: { job: current } });
+  });
+  await page.goto("/gastos/nuevo");
+  await fillRow(page);
+  await page
+    .getByRole("button", { name: "Añadir otro gasto", exact: true })
+    .click();
+  await fillRow(page, 2);
+  await page
+    .getByRole("button", { name: "Quitar gasto 2", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Descripción gasto 2", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Añadir otro gasto", exact: true })
+    .click();
+  await fillRow(page, 2);
+  expect(commands).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Revisar gastos", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+  ).toBeVisible();
+  expect(current.rows).toHaveLength(2);
+  expect(current.rows.every((row) => row.selected && row.reviewed)).toBe(true);
+  expect(commands.map((command) => command.operation)).toEqual(["create"]);
+  await page
+    .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
+    .check();
+  await page
+    .getByRole("button", { name: "Confirmar gastos", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Gastos guardados." }),
+  ).toBeVisible();
+  expect(commands[1]).toEqual({
+    operation: "confirm",
+    id: jobId,
+    expectedVersion: 1,
+  });
+  expect(current.results).toHaveLength(2);
 });
 test("uncertain confirmation is recovered after reload with the same key and command", async ({
   page,
@@ -154,20 +219,17 @@ test("uncertain confirmation is recovered after reload with the same key and com
     }
     return r.fulfill({ json: { job: current } });
   });
-  await page.goto("/importar");
+  await page.goto("/gastos/nuevo");
   await fillRow(page);
   await page
-    .getByRole("button", { name: "Revisar selección", exact: true })
+    .getByRole("button", { name: "Revisar gastos", exact: true })
     .click();
   await page
-    .getByLabel(
-      "Confirmo incorporar estas filas revisadas al libro del viaje.",
-      { exact: true },
-    )
+    .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
     .check();
   await page
     .getByRole("button", {
-      name: "Confirmar gastos seleccionados",
+      name: "Confirmar gastos",
       exact: true,
     })
     .click();
@@ -186,10 +248,57 @@ test("uncertain confirmation is recovered after reload with the same key and com
     })
     .click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Importación confirmada" }),
+    page.getByRole("status").filter({ hasText: "Gastos guardados." }),
   ).toBeVisible();
   expect(attempts).toHaveLength(2);
   expect(attempts[1]).toEqual(attempts[0]);
+});
+test("una advertencia nueva del servidor exige revisión antes de confirmar", async ({
+  page,
+}) => {
+  let current = draft([]);
+  const operations: string[] = [];
+  await page.route("**/api/session", (r) => r.fulfill({ json: session }));
+  await page.route("**/api/imports**", (r) => {
+    if (r.request().method() === "GET")
+      return r.fulfill({ json: { jobs: [] } });
+    const command = r.request().postDataJSON();
+    operations.push(command.operation);
+    current =
+      command.operation === "create"
+        ? draft(
+            command.rows.map((row: ImportRow) => ({
+              ...row,
+              warnings: ["NON_EXPENSE_MOVEMENT"],
+              reviewed: false,
+            })),
+          )
+        : draft(command.rows, current.version + 1);
+    return r.fulfill({ json: { job: current } });
+  });
+  await page.goto("/gastos/nuevo");
+  await fillRow(page);
+  await page
+    .getByRole("button", { name: "Revisar gastos", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("He revisado gasto 1", { exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Revisar gastos", exact: true }),
+  ).toBeDisabled();
+  expect(operations).toEqual(["create"]);
+  await page.getByLabel("He revisado gasto 1", { exact: true }).check();
+  await page
+    .getByRole("button", { name: "Revisar gastos", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+  ).toBeVisible();
+  expect(operations).toEqual(["create", "save"]);
 });
 test("editing a duplicate row invalidates review and the keep-both decision", async ({
   page,
@@ -219,30 +328,31 @@ test("editing a duplicate row invalidates review and the keep-both decision", as
         : { jobs: [current] },
     }),
   );
-  await page.goto("/importar");
+  await page.goto("/gastos/nuevo");
+  await page.getByText("Recuperar borradores", { exact: true }).click();
   await page.getByRole("button", { name: /Abrir manual/ }).click();
   await expect(
-    page.getByRole("button", { name: "Revisar selección", exact: true }),
+    page.getByRole("button", { name: "Revisar gastos", exact: true }),
   ).toBeDisabled();
-  await page.getByLabel("Mantener ambos en fila 1", { exact: true }).check();
-  await page.getByLabel("He revisado fila 1", { exact: true }).check();
+  await page.getByLabel("Mantener ambos en gasto 1", { exact: true }).check();
+  await page.getByLabel("He revisado gasto 1", { exact: true }).check();
   await expect(
-    page.getByRole("button", { name: "Revisar selección", exact: true }),
+    page.getByRole("button", { name: "Revisar gastos", exact: true }),
   ).toBeEnabled();
   await page
-    .getByLabel("Descripción fila 1", { exact: true })
+    .getByLabel("Descripción gasto 1", { exact: true })
     .fill("Cena corregida");
   await expect(
-    page.getByLabel("Mantener ambos en fila 1", { exact: true }),
+    page.getByLabel("Mantener ambos en gasto 1", { exact: true }),
   ).not.toBeChecked();
   await expect(
-    page.getByLabel("He revisado fila 1", { exact: true }),
+    page.getByLabel("He revisado gasto 1", { exact: true }),
   ).not.toBeChecked();
   await expect(
-    page.getByRole("button", { name: "Revisar selección", exact: true }),
+    page.getByRole("button", { name: "Revisar gastos", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByLabel("Pagador fila 1", { exact: true }),
+    page.getByLabel("Pagador gasto 1", { exact: true }),
   ).toBeDisabled();
 });
 
@@ -255,7 +365,8 @@ test("template download and Spanish tabular headers never auto-save", async ({
     if (r.request().method() !== "GET") writes++;
     return r.fulfill({ json: { jobs: [] } });
   });
-  await page.goto("/importar");
+  await page.goto("/gastos/nuevo");
+  await page.getByText("¿Prefieres usar Excel?", { exact: true }).click();
   await expect(
     page.getByRole("link", { name: "Descargar plantilla Excel", exact: true }),
   ).toHaveAttribute("href", "/api/imports/template");
@@ -266,13 +377,13 @@ test("template download and Spanish tabular headers never auto-save", async ({
     .getByRole("button", { name: "Preparar datos pegados", exact: true })
     .click();
   await expect(
-    page.getByLabel("Descripción fila 1", { exact: true }),
+    page.getByLabel("Descripción gasto 1", { exact: true }),
   ).toHaveValue("Cena");
-  await expect(page.getByLabel("Importe fila 1", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Importe gasto 1", { exact: true })).toHaveValue(
     "12.01",
   );
   await expect(
-    page.getByLabel("He revisado fila 1", { exact: true }),
+    page.getByLabel("He revisado gasto 1", { exact: true }),
   ).not.toBeChecked();
   expect(writes).toBe(0);
 });
