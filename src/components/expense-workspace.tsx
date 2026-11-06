@@ -83,10 +83,8 @@ export default function ExpenseWorkspace({
     [uncertain, setUncertain] = useState(false);
   const [keepDuplicate, setKeepDuplicate] = useState(false);
   const [search, setSearch] = useState(""),
-    [filterCurrency, setFilterCurrency] = useState(""),
     [filterPayer, setFilterPayer] = useState(""),
-    [from, setFrom] = useState(""),
-    [until, setUntil] = useState("");
+    [filterDate, setFilterDate] = useState("");
   const operationKey = useRef<string | null>(null);
   const abortRef = useRef(false);
   const showForm = entry || !!editing || !!review;
@@ -388,10 +386,8 @@ export default function ExpenseWorkspace({
         e.description
           .toLocaleLowerCase("es")
           .includes(search.toLocaleLowerCase("es"))) &&
-      (!filterCurrency || e.currency === filterCurrency) &&
       (!filterPayer || e.payerId === filterPayer) &&
-      (!from || e.spentOn >= from) &&
-      (!until || e.spentOn <= until),
+      (!filterDate || e.spentOn === filterDate),
   );
   if (loading)
     return (
@@ -550,7 +546,7 @@ export default function ExpenseWorkspace({
           </nav>
         </div>
       </header>
-      <p role="status" className={message ? "notice" : ""}>
+      <p role="status" className={message ? "notice" : "home-feedback"}>
         {message}
       </p>
       {summary && !entry ? (
@@ -777,7 +773,10 @@ export default function ExpenseWorkspace({
           </div>
         </section>
       ) : null}
-      <section className="settlement" aria-labelledby="list-title">
+      <section
+        className="settlement home-movements"
+        aria-labelledby="list-title"
+      >
         <h2 id="list-title">Gastos registrados</h2>
         <div className="filters">
           <label>
@@ -785,19 +784,9 @@ export default function ExpenseWorkspace({
             <input value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
           <label>
-            Moneda
-            <select
-              value={filterCurrency}
-              onChange={(e) => setFilterCurrency(e.target.value)}
-            >
-              <option value="">Todas</option>
-              <option>PEN</option>
-              <option>USD</option>
-            </select>
-          </label>
-          <label>
             Pagador
             <select
+              aria-label="Pagador"
               value={filterPayer}
               onChange={(e) => setFilterPayer(e.target.value)}
             >
@@ -810,19 +799,11 @@ export default function ExpenseWorkspace({
             </select>
           </label>
           <label>
-            Desde
+            Fecha
             <input
               type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </label>
-          <label>
-            Hasta
-            <input
-              type="date"
-              value={until}
-              onChange={(e) => setUntil(e.target.value)}
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
             />
           </label>
         </div>
