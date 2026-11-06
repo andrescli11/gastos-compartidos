@@ -1,0 +1,51 @@
+{
+  "name": "gastos-compartidos",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run && npm run test:local",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:money": "node scripts/check-money.mjs",
+    "test:settlement": "node scripts/check-settlement.mjs",
+    "test:authorization": "node scripts/check-authorization.mjs",
+    "test:domain": "npm run test:money && npm run test:settlement && npm run test:authorization && npm run test:payments",
+    "test:persistence": "node scripts/check-persistence-adapter.mjs",
+    "test:db": "bash scripts/test-db.sh",
+    "init:local": "node scripts/init-local.mjs",
+    "test:api": "node scripts/check-api.mjs && node scripts/check-payment-api.mjs",
+    "test:csv": "node scripts/check-csv.mjs && node scripts/check-excel.mjs && node scripts/check-excel-template.mjs && python3 scripts/check-backup-toc.py",
+    "test:local": "npm run test:domain && npm run test:persistence && npm run test:api && npm run test:csv && npm run test:pending && npm run test:imports",
+    "test:pending": "node scripts/check-pending.mjs",
+    "test:payments": "node scripts/check-payments.mjs",
+    "test:imports": "node scripts/check-import-workflow.mjs && node scripts/check-csv-workflow.mjs",
+    "test:http": "node scripts/check-http-flow.mjs"
+  },
+  "dependencies": {
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7",
+    "pg": "8.16.3",
+    "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "vitest": "5.1.0",
+    "fast-check": "4.10.2",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.5",
+    "prettier": "3.9.10",
+    "@playwright/test": "1.64.1",
+    "@types/pg": "8.15.5"
+  },
+  "type": "module"
+}

@@ -1,0 +1,154 @@
+name: Bootstrap source snapshot
+on:
+  push:
+    branches: [feat/foundations-money]
+    paths:
+      - .github/workflows/bootstrap.yml
+      - package.json
+permissions:
+  contents: read
+concurrency:
+  group: bootstrap-dependency-lock
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: github.repository == 'andrescli11/gastos-compartidos' && github.ref == 'refs/heads/feat/foundations-money'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check whether bootstrap is needed
+        id: lock
+        shell: bash
+        run: |
+          if test -f package-lock.json; then
+            echo 'missing=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'missing=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.lock.outputs.missing == 'true'
+        with:
+          node-version: 24
+      - name: Resolve dependencies without lifecycle scripts
+        id: resolve
+        if: steps.lock.outputs.missing == 'true'
+        run: npm install --ignore-scripts
+      - name: Pin direct dependencies to resolved versions
+        if: steps.lock.outputs.missing == 'true'
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          for (const section of ['dependencies', 'devDependencies']) {
+            for (const name of Object.keys(manifest[section] ?? {})) {
+              const version = lock.packages[`node_modules/${name}`]?.version;
+              if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+                throw new Error(`Missing exact version for ${name}`);
+              }
+              manifest[section][name] = version;
+            }
+          }
+          writeFileSync('package.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          npm install --package-lock-only --ignore-scripts
+      - name: Normalize tracked source formatting
+        if: steps.lock.outputs.missing == 'true'
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          const changed = execFileSync('git', ['diff', '--name-only', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+          if (changed.some(path => path !== 'package.json')) {
+            throw new Error('Unexpected tracked changes before formatting');
+          }
+          NODE
+          npm run format
+      - name: Prepare reviewed source snapshot artifact
+        if: steps.lock.outputs.missing == 'true'
+        env:
+          BOOTSTRAP_REPOSITORY: ${{ github.repository }}
+          BOOTSTRAP_EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const repository = process.env.BOOTSTRAP_REPOSITORY;
+          const expected = process.env.BOOTSTRAP_EXPECTED_SHA;
+          const branch = 'feat/foundations-money';
+          if (repository !== 'andrescli11/gastos-compartidos') throw new Error('Unexpected repository');
+          const gitPaths = args => execFileSync('git', args, { encoding: 'utf8' }).split('\0').filter(Boolean);
+          const modified = gitPaths(['diff', '--name-only', '--diff-filter=M', '-z']);
+          const changed = gitPaths(['diff', '--name-only', '-z']);
+          if (changed.length !== modified.length) throw new Error('Only modifications of existing tracked files are allowed');
+          const tracked = new Map(gitPaths(['ls-files', '--stage', '-z']).map(entry => {
+            const [metadata, path] = entry.split('\t');
+            return [path, metadata.split(' ')[0]];
+          }));
+          const paths = [...new Set([...modified, 'package-lock.json'])];
+          const entries = paths.map(path => {
+            const parts = path.split('/');
+            if (path.startsWith('/') || path.includes('\\') || parts.some(part =>
+              !part || part === '.' || part === '..' || (part.startsWith('.env') && part !== '.env.example')
+            )) throw new Error('Unsafe path in bootstrap changes');
+            for (let index = 1; index <= parts.length; index++) {
+              if (lstatSync(parts.slice(0, index).join('/')).isSymbolicLink()) throw new Error('Symlinks are not allowed');
+            }
+            const mode = path === 'package-lock.json' ? '100644' : tracked.get(path);
+            if (!['100644', '100755'].includes(mode) || !lstatSync(path).isFile()) {
+              throw new Error('Only regular tracked files and the new lockfile may be exported');
+            }
+            return { path, mode, type: 'blob', content: readFileSync(path, 'utf8') };
+          });
+          if (!/^[a-f0-9]{40}$/.test(expected)) throw new Error('Invalid snapshot parent SHA');
+          mkdirSync('.ci-bootstrap', { recursive: true });
+          writeFileSync('.ci-bootstrap/snapshot.json', `${JSON.stringify({ parentSha: expected, entries }, null, 2)}\n`);
+          console.log(`Prepared source snapshot with ${entries.length} files for ${branch}`);
+          NODE
+      - name: Upload source snapshot for review and publication
+        if: steps.lock.outputs.missing == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bootstrap-source-snapshot
+          path: .ci-bootstrap/snapshot.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+      # Gather independent failures without suppressing any failed gate.
+      - name: Verify reproducible install
+        id: install
+        if: always() && steps.lock.outputs.missing == 'true' && steps.resolve.outcome == 'success'
+        run: npm ci
+      - name: Check formatting
+        if: always() && steps.install.outcome == 'success'
+        run: npm run format:check
+      - name: Lint
+        if: always() && steps.install.outcome == 'success'
+        run: npm run lint
+      - name: Typecheck
+        if: always() && steps.install.outcome == 'success'
+        run: npm run typecheck
+      - name: Test
+        if: always() && steps.install.outcome == 'success'
+        run: npm test
+      - name: Build
+        id: build
+        if: always() && steps.install.outcome == 'success'
+        run: npm run build
+      - name: Install browser
+        id: browser
+        if: always() && steps.build.outcome == 'success'
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        if: always() && steps.build.outcome == 'success' && steps.browser.outcome == 'success'
+        timeout-minutes: 10
+        run: npx playwright test
+      - name: Audit dependencies
+        if: always() && steps.install.outcome == 'success'
+        run: npm audit --audit-level=high

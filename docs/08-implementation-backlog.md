@@ -2,6 +2,8 @@
 
 El orden minimiza retrabajo y permite validar el riesgo financiero y de autorización antes de integrar IA.
 
+Estado vigente: F0–F3, F5 y F6 implementadas y verificadas. Los originales no se retienen en Storage por ADR018; el alcance determinístico usa CSV local y Excel acotado en memoria. F4 permanece deshabilitada por la excepción de GateE. Ver [liberación](17-release-verification.md).
+
 ## Fase 0 — Fundaciones
 
 ### F0.1 Proyecto y calidad
