@@ -778,35 +778,49 @@ export default function ExpenseWorkspace({
         aria-labelledby="list-title"
       >
         <h2 id="list-title">Gastos registrados</h2>
-        <div className="filters">
-          <label>
-            Buscar
-            <input value={search} onChange={(e) => setSearch(e.target.value)} />
-          </label>
-          <label>
-            Pagador
-            <select
-              aria-label="Pagador"
-              value={filterPayer}
-              onChange={(e) => setFilterPayer(e.target.value)}
-            >
-              <option value="">Todos</option>
-              {context.participants.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Fecha
-            <input
-              type="date"
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-            />
-          </label>
-        </div>
+        <details className="home-filter-panel">
+          <summary aria-label="Buscar y filtrar">
+            Buscar y filtrar
+            {search || filterPayer || filterDate ? (
+              <span className="home-filter-count">
+                Filtros activos:{" "}
+                {[search, filterPayer, filterDate].filter(Boolean).length}
+              </span>
+            ) : null}
+          </summary>
+          <div className="filters">
+            <label>
+              Buscar
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+            <label>
+              Pagador
+              <select
+                aria-label="Pagador"
+                value={filterPayer}
+                onChange={(e) => setFilterPayer(e.target.value)}
+              >
+                <option value="">Todos</option>
+                {context.participants.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Fecha
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+              />
+            </label>
+          </div>
+        </details>
         {!expenses.length ? (
           <p>El viaje todavía no tiene gastos. Registra el primero.</p>
         ) : !filtered.length ? (
