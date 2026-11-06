@@ -786,6 +786,7 @@ export default function ExpenseWorkspace({
           <label>
             Pagador
             <select
+              aria-label="Pagador"
               value={filterPayer}
               onChange={(e) => setFilterPayer(e.target.value)}
             >
