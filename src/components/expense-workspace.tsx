@@ -398,6 +398,50 @@ export default function ExpenseWorkspace() {
     );
   const canManage = (e: ExpenseRecord) =>
     context.role === "admin" || e.payerId === context.participantId;
+  const expenseSource = (e: ExpenseRecord) =>
+    ({
+      manual: "Manual",
+      bulk: "Registro masivo",
+      csv: "CSV",
+      excel: "Excel",
+      image: "Imagen",
+    })[e.source];
+  const expenseParts = (e: ExpenseRecord) => (
+    <details>
+      <summary>Ver reparto</summary>
+      <ul>
+        {e.splits.map((s) => (
+          <li key={s.participantId}>
+            <span>{name(s.participantId)}</span>
+            <strong>{formatMoney(BigInt(s.amountMinor), e.currency)}</strong>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+  const expenseActions = (e: ExpenseRecord) =>
+    canManage(e) ? (
+      <div className="actions">
+        <button disabled={!!review} onClick={() => edit(e)}>
+          Editar
+        </button>
+        <button
+          disabled={!!review}
+          onClick={() => {
+            setReview({
+              operation: "void",
+              id: e.id,
+              expectedVersion: e.version,
+            });
+            operationKey.current = crypto.randomUUID();
+            setMessage("");
+          }}
+        >
+          Anular
+        </button>
+      </div>
+    ) : null;
+
   return (
     <main>
       <header>
@@ -698,62 +742,75 @@ export default function ExpenseWorkspace() {
         ) : !filtered.length ? (
           <p>No hay gastos con estos filtros.</p>
         ) : (
-          filtered.map((e) => (
-            <article className="expense-card" key={e.id}>
-              <div>
-                <h3>{e.description}</h3>
-                <p>
-                  {e.spentOn} · Pagó {name(e.payerId)} · Origen:{" "}
-                  {
-                    {
-                      manual: "manual",
-                      bulk: "registro masivo",
-                      csv: "CSV",
-                      excel: "Excel",
-                      image: "imagen",
-                    }[e.source]
-                  }
-                </p>
-                <strong>
-                  {formatMoney(BigInt(e.amountMinor), e.currency)}
-                </strong>
-              </div>
-              <details>
-                <summary>Ver reparto</summary>
-                <ul>
-                  {e.splits.map((s) => (
-                    <li key={s.participantId}>
-                      <span>{name(s.participantId)}</span>
-                      <strong>
-                        {formatMoney(BigInt(s.amountMinor), e.currency)}
-                      </strong>
-                    </li>
+          <>
+            <div
+              className="expense-table-wrap"
+              role="region"
+              aria-label="Tabla de gastos"
+              tabIndex={0}
+            >
+              <table className="expense-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Descripción</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Pagador</th>
+                    <th scope="col" className="expense-money">
+                      Importe
+                    </th>
+                    <th scope="col">Origen</th>
+                    <th scope="col">Reparto</th>
+                    <th scope="col">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((e) => (
+                    <tr key={e.id}>
+                      <th scope="row">
+                        <h3>{e.description}</h3>
+                      </th>
+                      <td className="expense-date">{e.spentOn}</td>
+                      <td>{name(e.payerId)}</td>
+                      <td className="expense-money">
+                        <strong>
+                          {formatMoney(BigInt(e.amountMinor), e.currency)}
+                        </strong>
+                      </td>
+                      <td>{expenseSource(e)}</td>
+                      <td>{expenseParts(e)}</td>
+                      <td>{expenseActions(e)}</td>
+                    </tr>
                   ))}
-                </ul>
-              </details>
-              {canManage(e) ? (
-                <div className="actions">
-                  <button disabled={!!review} onClick={() => edit(e)}>
-                    Editar
-                  </button>
-                  <button
-                    disabled={!!review}
-                    onClick={() => {
-                      setReview({
-                        operation: "void",
-                        id: e.id,
-                        expectedVersion: e.version,
-                      });
-                      operationKey.current = crypto.randomUUID();
-                      setMessage("");
-                    }}
-                  >
-                    Anular
-                  </button>
-                </div>
-              ) : null}
-            </article>
-          ))
+                </tbody>
+              </table>
+            </div>
+            <div className="expense-mobile">
+              {filtered.map((e) => (
+                <article className="expense-card" key={e.id}>
+                  <div>
+                    <h3>{e.description}</h3>
+                    <p>
+                      {e.spentOn} · Pagó {name(e.payerId)} · Origen:{" "}
+                      {
+                        {
+                          manual: "manual",
+                          bulk: "registro masivo",
+                          csv: "CSV",
+                          excel: "Excel",
+                          image: "imagen",
+                        }[e.source]
+                      }
+                    </p>
+                    <strong>
+                      {formatMoney(BigInt(e.amountMinor), e.currency)}
+                    </strong>
+                  </div>
+                  {expenseParts(e)}
+                  {expenseActions(e)}
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </section>
       {summary ? (
