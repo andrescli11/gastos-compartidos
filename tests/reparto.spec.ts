@@ -3,7 +3,7 @@ test("revisión exacta, cambio de moneda y errores accesibles", async ({
   page,
 }) => {
   await page.goto("/");
-  await expect(page.getByText("Vista de desarrollo")).toBeVisible();
+  await expect(page.getByText("Simulador de reparto")).toBeVisible();
   await page.getByLabel("Importe total").fill("10.00");
   await expect(
     page.locator(".preview").getByText("S/ 3.34", { exact: true }),
