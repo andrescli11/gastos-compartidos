@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test";
 test("revisión exacta, cambio de moneda y errores accesibles", async ({
   page,
 }) => {
-  await page.goto("/");
-  await expect(page.getByText("Simulador de reparto")).toBeVisible();
+  await page.goto("/simulador");
+  await expect(
+    page.getByText("Simulador de reparto", { exact: true }),
+  ).toBeVisible();
   await page.getByLabel("Importe total").fill("10.00");
   await expect(
     page.locator(".preview").getByText("S/ 3.34", { exact: true }),

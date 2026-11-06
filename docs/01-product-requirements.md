@@ -88,11 +88,11 @@ Campos mínimos: descripción, fecha, importe, moneda, pagador y uno o más part
 
 ### Registrar un gasto
 
-Abrir enlace → elegir registro individual → completar datos → seleccionar beneficiarios → revisar reparto → guardar → ver saldo actualizado.
+Abrir enlace → dashboard → «Ingresar gastos» → elegir registro individual → completar datos → seleccionar beneficiarios → revisar reparto → guardar → ver saldo actualizado.
 
 ### Importar gastos
 
-Abrir enlace → elegir origen → cargar archivo → procesar → revisar candidatos junto a su evidencia → corregir y asignar beneficiarios → confirmar selección → ver resultado por fila y totales PEN/USD.
+Abrir enlace → dashboard → «Ingresar gastos» → elegir lote o archivo → cargar archivo → procesar → revisar candidatos junto a su evidencia → corregir y asignar beneficiarios → confirmar selección → ver resultado por fila y totales PEN/USD.
 
 ### Liquidar el viaje
 

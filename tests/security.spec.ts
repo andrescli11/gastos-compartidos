@@ -19,7 +19,7 @@ test("fresh CSP nonce allows hydration and blocks inline event handlers", async 
   const html = await first.text();
   expect(html).toContain(`nonce="${nonce}"`);
 
-  await page.goto("/");
+  await page.goto("/simulador");
   await page.getByLabel("Importe total").fill("99.00");
   await expect(
     page.locator(".preview").getByText("S/ 33.00", { exact: true }),
@@ -42,6 +42,10 @@ test("private pages and anonymous APIs do not permit shared caches", async ({
   request,
 }) => {
   for (const path of [
+    "/",
+    "/gastos/nuevo",
+    "/gastos/nuevo/individual",
+    "/gastos/nuevo/lote",
     "/entrar",
     "/gastos",
     "/pagos",

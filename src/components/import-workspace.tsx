@@ -275,6 +275,13 @@ export default function ImportWorkspace() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty, busy, uncertain]);
+  useEffect(() => {
+    if (loading || !session) return;
+    const id = window.location.hash.slice(1);
+    if (id === "manual-rows" || id === "prepare-data") {
+      document.getElementById(id)?.scrollIntoView();
+    }
+  }, [loading, session]);
   const locked = busy || uncertain || (!!job && job.state !== "preview");
   const completed = new Set(
     job?.results.filter((r) => r.status === "persisted").map((r) => r.rowId) ??
@@ -685,7 +692,7 @@ export default function ImportWorkspace() {
       <header>
         <Link
           className="brand"
-          href="/gastos"
+          href="/"
           onNavigate={(event) => {
             if (dirty || busy || uncertain) event.preventDefault();
           }}
@@ -694,16 +701,16 @@ export default function ImportWorkspace() {
         </Link>
         <Link
           className="badge"
-          href="/gastos"
+          href="/gastos/nuevo"
           onNavigate={(event) => {
             if (dirty || busy || uncertain) event.preventDefault();
           }}
         >
-          Volver a gastos
+          Cambiar método de ingreso
         </Link>
       </header>
       <section className="intro">
-        <p className="eyebrow">REVISAR ANTES DE GUARDAR</p>
+        <p className="eyebrow">INGRESAR GASTOS / LOTE O ARCHIVO</p>
         <h1>Gastos por lote.</h1>
         <p>
           Prepara varias filas, revisa su evidencia y confirma exactamente lo
@@ -777,7 +784,7 @@ export default function ImportWorkspace() {
             ) : null}
           </section>
           {!job || job.state === "preview" ? (
-            <section className="settlement">
+            <section className="settlement" id="prepare-data">
               <h2>Preparar datos</h2>
               <p>
                 <a
@@ -939,7 +946,7 @@ export default function ImportWorkspace() {
               ) : null}
             </section>
           ) : null}
-          <section className="settlement">
+          <section className="settlement" id="manual-rows">
             <h2>Revisión de filas{job ? ` · versión ${job.version}` : ""}</h2>
             {job ? (
               <p className="hint">

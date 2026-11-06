@@ -129,3 +129,11 @@ CSP con nonce por petición y render dinámico, caché privada en recorridos aut
 ## ADR021 — Permisos futuros del rol de migración
 
 PostgreSQL concede EXECUTE a PUBLIC por defecto de forma global; un REVOKE por esquema no puede restar ese permiso global. La remediación y restauración revocan el default global de EXECUTE del rol de migración y conceden funciones de app_api explícitamente a cusco_bff. No modifica funciones existentes fuera de la app; una RPC nueva de ese propietario requiere grants explícitos. La prueba de restauración crea una función temporal y verifica que no es pública.
+
+## ADR022 — Ingreso de gastos separado del dashboard
+
+**Contexto:** los formularios y accesos de carga competían con el resumen del viaje.
+
+**Decisión:** `/` y `/gastos` muestran el dashboard. El CTA «Ingresar gastos» abre `/gastos/nuevo`, que reúne registro individual, lote manual/pegado e importación Excel/CSV. El lote y los archivos reutilizan la misma revisión privada y confirmación explícita. `/importar` redirige al flujo unificado; el simulador público se conserva en `/simulador`.
+
+**Consecuencias:** se elimina el asistente CSV duplicado del dashboard; edición/anulación y operaciones pendientes siguen disponibles con revisión. El inicio recibe las mismas cabeceras privadas sin caché que las demás pantallas autenticadas. Navegar desde un formulario con datos pide descartarlos; durante revisión o resultado incierto se conserva la operación. No cambia ningún contrato de API, cálculo monetario ni permiso de servidor.

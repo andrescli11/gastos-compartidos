@@ -24,7 +24,8 @@ export function contentSecurityPolicy(
 }
 
 export function isPrivatePage(pathname: string) {
-  return /^\/(?:entrar|gastos|pagos|importar|administrar|api)(?:\/|$)/.test(
-    pathname,
+  return (
+    pathname === "/" ||
+    /^\/(?:entrar|gastos|pagos|importar|administrar|api)(?:\/|$)/.test(pathname)
   );
 }
