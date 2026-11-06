@@ -1,5 +1,5 @@
-import ImportWorkspace from "@/components/import-workspace";
+import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 export default function ImportPage() {
-  return <ImportWorkspace />;
+  redirect("/gastos/nuevo/lote");
 }

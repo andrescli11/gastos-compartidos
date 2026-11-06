@@ -5,7 +5,6 @@ import {
   recoverPending,
   forgetPending,
 } from "@/domain/pending-operation";
-import CsvReview, { type ReviewedCsvRow } from "./csv-review";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   equalSplit,
@@ -56,7 +55,11 @@ const decimal = (value: string) => {
   const n = BigInt(value);
   return `${n / 100n}.${(n % 100n).toString().padStart(2, "0")}`;
 };
-export default function ExpenseWorkspace() {
+export default function ExpenseWorkspace({
+  entry = false,
+}: {
+  entry?: boolean;
+}) {
   const [context, setContext] = useState<Context | null>(null),
     [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [summary, setSummary] = useState<Record<
@@ -89,6 +92,25 @@ export default function ExpenseWorkspace() {
     [until, setUntil] = useState("");
   const operationKey = useRef<string | null>(null);
   const abortRef = useRef(false);
+  const showForm = entry || !!editing || !!review;
+  const hasDraft =
+    showForm && (!!description || !!amount || selected.length > 0 || !!editing);
+  function guardNavigation(event: { preventDefault(): void }) {
+    if (saving || uncertain || review) {
+      event.preventDefault();
+      setMessage(
+        "Termina la revisión o comprueba la operación pendiente antes de salir.",
+      );
+    } else if (
+      hasDraft &&
+      !window.confirm("Hay un gasto sin guardar. ¿Quieres descartarlo y salir?")
+    ) {
+      event.preventDefault();
+    }
+  }
+  useEffect(() => {
+    if (editing) document.getElementById("expense-description")?.focus();
+  }, [editing]);
   function invalidate(error: unknown) {
     if (error instanceof ApiError && error.status === 401) {
       setContext(null);
@@ -163,14 +185,14 @@ export default function ExpenseWorkspace() {
     };
   }, []);
   useEffect(() => {
-    if (!uncertain && !saving) return;
+    if (!uncertain && !saving && !hasDraft) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [uncertain, saving]);
+  }, [uncertain, saving, hasDraft]);
   const names = new Map(
     context?.participants.map((p) => [p.id, p.displayName]) ?? [],
   );
@@ -328,20 +350,15 @@ export default function ExpenseWorkspace() {
       setSaving(false);
     }
   }
-  function useCsv(row: ReviewedCsvRow) {
-    if (review || saving) return;
-    resetForm();
-    setDescription(row.description);
-    setDate(row.date);
-    setAmount(row.amount);
-    setCurrency(row.currency);
-    setMessage(
-      "Fila copiada. Selecciona pagador y beneficiarios antes de revisar y guardar.",
-    );
-    document.getElementById("expense-description")?.focus();
-  }
   async function logout() {
     if (!context || saving || uncertain) return;
+    if (
+      hasDraft &&
+      !window.confirm(
+        "Hay un gasto sin guardar. ¿Quieres descartarlo y cerrar sesión?",
+      )
+    )
+      return;
     try {
       await api("/api/access/logout", {
         method: "POST",
@@ -393,7 +410,10 @@ export default function ExpenseWorkspace() {
       <main>
         <h1>Acceso privado</h1>
         <p role="alert">{fatal || "Abre tu enlace privado para entrar."}</p>
-        <Link href="/">Volver al inicio</Link>
+        <p>
+          Abre tu enlace privado para consultar el dashboard e ingresar gastos.
+        </p>
+        <Link href="/simulador">Probar el simulador de reparto</Link>
       </main>
     );
   const canManage = (e: ExpenseRecord) =>
@@ -444,24 +464,35 @@ export default function ExpenseWorkspace() {
 
   return (
     <main>
-      <header>
-        <Link className="brand" href="/">
+      <header className="payment-header">
+        <Link className="brand" href="/" onNavigate={guardNavigation}>
           C / Cusco
         </Link>
-        <button disabled={saving || uncertain} onClick={() => void logout()}>
+        <button
+          disabled={saving || uncertain || !!review}
+          onClick={() => void logout()}
+        >
           Cerrar sesión
         </button>
       </header>
-      <nav className="actions">
-        <Link href="/pagos">Pagos y cierre</Link>
-        <Link href="/importar">Importar varios gastos</Link>
+      <nav className="actions dashboard-nav" aria-label="Navegación del viaje">
+        <Link href="/" onNavigate={guardNavigation}>
+          Inicio
+        </Link>
+        <Link href="/pagos" onNavigate={guardNavigation}>
+          Pagos y cierre
+        </Link>
         {context.role === "admin" ? (
-          <Link href="/administrar">Administrar accesos</Link>
+          <Link href="/administrar" onNavigate={guardNavigation}>
+            Administrar accesos
+          </Link>
         ) : null}
       </nav>
       <section className="intro">
-        <p className="eyebrow">GASTOS DEL VIAJE</p>
-        <h1>Todo en orden.</h1>
+        <p className="eyebrow">
+          {entry ? "INGRESAR GASTOS / INDIVIDUAL" : "RESUMEN DEL VIAJE"}
+        </p>
+        <h1>{entry ? "Un gasto, bien repartido." : "Todo en orden."}</h1>
         <p>
           {context.role === "admin"
             ? "Administración"
@@ -471,11 +502,18 @@ export default function ExpenseWorkspace() {
             ? "Liquidación consolidada en PEN."
             : "Liquidación separada en PEN y USD."}
         </p>
+        <Link
+          className={entry ? undefined : "primary-link"}
+          href="/gastos/nuevo"
+          onNavigate={guardNavigation}
+        >
+          {entry ? "Cambiar método de ingreso" : "Ingresar gastos"}
+        </Link>
       </section>
       <p role="status" className={message ? "notice" : ""}>
         {message}
       </p>
-      {summary ? (
+      {summary && !entry ? (
         <section className="summary-grid" aria-label="Resumen por moneda">
           {(["PEN", "USD"] as const).map((c) => (
             <div className="summary-card" key={c}>
@@ -498,196 +536,204 @@ export default function ExpenseWorkspace() {
           ))}
         </section>
       ) : null}
-      <section className="workspace" aria-labelledby="form-title">
-        <div className="editor">
-          <h2 id="form-title">
-            {editing ? "Editar gasto" : "Registrar un gasto"}
-          </h2>
-          <form onSubmit={prepare}>
-            <fieldset disabled={!!review || saving} className="expense-fields">
-              <label htmlFor="expense-description">Descripción</label>
-              <input
-                id="expense-description"
-                value={description}
-                maxLength={240}
-                required
-                onChange={(e) => setDescription(e.target.value)}
-              />
-              <label htmlFor="expense-date">Fecha</label>
-              <input
-                id="expense-date"
-                type="date"
-                min="2000-01-01"
-                max="2100-12-31"
-                value={date}
-                required
-                onChange={(e) => setDate(e.target.value)}
-              />
-              <label htmlFor="expense-amount">Importe</label>
-              <input
-                id="expense-amount"
-                inputMode="decimal"
-                value={amount}
-                maxLength={15}
-                required
-                onChange={(e) => setAmount(e.target.value)}
-                aria-invalid={!!amount && !!splitError}
-                aria-describedby="expense-split-error"
-              />
-              <label htmlFor="expense-currency">Moneda</label>
-              <select
-                id="expense-currency"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as Currency)}
+      {showForm ? (
+        <section className="workspace" aria-labelledby="form-title">
+          <div className="editor">
+            <h2 id="form-title">
+              {editing ? "Editar gasto" : "Registrar un gasto"}
+            </h2>
+            <form onSubmit={prepare}>
+              <fieldset
+                disabled={!!review || saving}
+                className="expense-fields"
               >
-                <option value="PEN">PEN · Soles</option>
-                <option value="USD">USD · Dólares</option>
-              </select>
-              <label htmlFor="expense-payer">Pagador</label>
-              <select
-                id="expense-payer"
-                value={payer}
-                disabled={context.role !== "admin"}
-                onChange={(e) => setPayer(e.target.value)}
-              >
-                {context.participants.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.displayName}
-                  </option>
-                ))}
-              </select>
-              <fieldset>
-                <legend>Beneficiarios</legend>
-                {context.participants.map((p) => (
-                  <div className="person" key={p.id}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(p.id)}
-                        onChange={(e) =>
-                          setSelected((current) =>
-                            e.target.checked
-                              ? [...current, p.id]
-                              : current.filter((id) => id !== p.id),
-                          )
-                        }
-                      />{" "}
-                      {p.displayName}
-                    </label>
-                    {custom && selected.includes(p.id) ? (
-                      <input
-                        aria-label={`Parte de ${p.displayName}`}
-                        className="custom-amount"
-                        inputMode="decimal"
-                        value={parts[p.id] ?? ""}
-                        onChange={(e) =>
-                          setParts((current) => ({
-                            ...current,
-                            [p.id]: e.target.value,
-                          }))
-                        }
-                      />
-                    ) : null}
-                  </div>
-                ))}
-              </fieldset>
-              <label className="person">
-                <span>Importes personalizados</span>
+                <label htmlFor="expense-description">Descripción</label>
                 <input
-                  type="checkbox"
-                  checked={custom}
-                  onChange={(e) => setCustom(e.target.checked)}
+                  id="expense-description"
+                  value={description}
+                  maxLength={240}
+                  required
+                  onChange={(e) => setDescription(e.target.value)}
                 />
-              </label>
-            </fieldset>
-            <button type="submit" disabled={!!review || !!splitError || saving}>
-              Revisar antes de guardar
-            </button>
-            {editing && !review ? (
-              <button type="button" onClick={resetForm}>
-                Cancelar edición
-              </button>
-            ) : null}
-          </form>
-        </div>
-        <div className="preview">
-          <h2>Reparto exacto</h2>
-          {review?.operation === "void" ? (
-            <p>
-              Se anulará el gasto «
-              {expenses.find((e) => e.id === review.id)?.description}». Su
-              historial se conserva.
-            </p>
-          ) : (
-            <div aria-live="polite">
-              {splitError ? (
-                <p id="expense-split-error">{splitError}</p>
-              ) : (
-                <ul>
-                  {splits.map((s) => (
-                    <li key={s.participantId}>
-                      <span>{name(s.participantId)}</span>
-                      <strong>{formatMoney(s.amountMinor, currency)}</strong>
-                    </li>
+                <label htmlFor="expense-date">Fecha</label>
+                <input
+                  id="expense-date"
+                  type="date"
+                  min="2000-01-01"
+                  max="2100-12-31"
+                  value={date}
+                  required
+                  onChange={(e) => setDate(e.target.value)}
+                />
+                <label htmlFor="expense-amount">Importe</label>
+                <input
+                  id="expense-amount"
+                  inputMode="decimal"
+                  value={amount}
+                  maxLength={15}
+                  required
+                  onChange={(e) => setAmount(e.target.value)}
+                  aria-invalid={!!amount && !!splitError}
+                  aria-describedby="expense-split-error"
+                />
+                <label htmlFor="expense-currency">Moneda</label>
+                <select
+                  id="expense-currency"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value as Currency)}
+                >
+                  <option value="PEN">PEN · Soles</option>
+                  <option value="USD">USD · Dólares</option>
+                </select>
+                <label htmlFor="expense-payer">Pagador</label>
+                <select
+                  id="expense-payer"
+                  value={payer}
+                  disabled={context.role !== "admin"}
+                  onChange={(e) => setPayer(e.target.value)}
+                >
+                  {context.participants.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.displayName}
+                    </option>
                   ))}
-                </ul>
-              )}
-            </div>
-          )}
-          {review ? (
-            <div className="confirmation">
-              <h3>
-                Confirmar{" "}
-                {review.operation === "void"
-                  ? "anulación"
-                  : review.operation === "update"
-                    ? "cambios"
-                    : "gasto"}
-              </h3>
-              <p>Solo esta confirmación modifica las cuentas del viaje.</p>
-              {duplicates.length && !uncertain ? (
+                </select>
+                <fieldset>
+                  <legend>Beneficiarios</legend>
+                  {context.participants.map((p) => (
+                    <div className="person" key={p.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(p.id)}
+                          onChange={(e) =>
+                            setSelected((current) =>
+                              e.target.checked
+                                ? [...current, p.id]
+                                : current.filter((id) => id !== p.id),
+                            )
+                          }
+                        />{" "}
+                        {p.displayName}
+                      </label>
+                      {custom && selected.includes(p.id) ? (
+                        <input
+                          aria-label={`Parte de ${p.displayName}`}
+                          className="custom-amount"
+                          inputMode="decimal"
+                          value={parts[p.id] ?? ""}
+                          onChange={(e) =>
+                            setParts((current) => ({
+                              ...current,
+                              [p.id]: e.target.value,
+                            }))
+                          }
+                        />
+                      ) : null}
+                    </div>
+                  ))}
+                </fieldset>
                 <label className="person">
-                  <span>
-                    Hay {duplicates.length} gasto(s) con la misma fecha,
-                    importe, moneda y descripción. He revisado la coincidencia y
-                    quiero conservar ambos.
-                  </span>
+                  <span>Importes personalizados</span>
                   <input
                     type="checkbox"
-                    checked={keepDuplicate}
-                    onChange={(e) => setKeepDuplicate(e.target.checked)}
+                    checked={custom}
+                    onChange={(e) => setCustom(e.target.checked)}
                   />
                 </label>
+              </fieldset>
+              <button
+                type="submit"
+                disabled={!!review || !!splitError || saving}
+              >
+                Revisar antes de guardar
+              </button>
+              {editing && !review ? (
+                <button type="button" onClick={resetForm}>
+                  Cancelar edición
+                </button>
               ) : null}
-              <button
-                onClick={() => void save()}
-                disabled={
-                  saving ||
-                  (!uncertain && duplicates.length > 0 && !keepDuplicate)
-                }
-              >
-                {saving
-                  ? "Guardando…"
-                  : uncertain
-                    ? "Reintentar la misma operación"
-                    : "Confirmar"}
-              </button>
-              <button
-                onClick={() => {
-                  setReview(null);
-                  operationKey.current = null;
-                  try {
-                    forgetPending(window.sessionStorage);
-                  } catch {}
-                }}
-                disabled={saving || uncertain}
-              >
-                Volver
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </section>
+            </form>
+          </div>
+          <div className="preview">
+            <h2>Reparto exacto</h2>
+            {review?.operation === "void" ? (
+              <p>
+                Se anulará el gasto «
+                {expenses.find((e) => e.id === review.id)?.description}». Su
+                historial se conserva.
+              </p>
+            ) : (
+              <div aria-live="polite">
+                {splitError ? (
+                  <p id="expense-split-error">{splitError}</p>
+                ) : (
+                  <ul>
+                    {splits.map((s) => (
+                      <li key={s.participantId}>
+                        <span>{name(s.participantId)}</span>
+                        <strong>{formatMoney(s.amountMinor, currency)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {review ? (
+              <div className="confirmation">
+                <h3>
+                  Confirmar{" "}
+                  {review.operation === "void"
+                    ? "anulación"
+                    : review.operation === "update"
+                      ? "cambios"
+                      : "gasto"}
+                </h3>
+                <p>Solo esta confirmación modifica las cuentas del viaje.</p>
+                {duplicates.length && !uncertain ? (
+                  <label className="person">
+                    <span>
+                      Hay {duplicates.length} gasto(s) con la misma fecha,
+                      importe, moneda y descripción. He revisado la coincidencia
+                      y quiero conservar ambos.
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={keepDuplicate}
+                      onChange={(e) => setKeepDuplicate(e.target.checked)}
+                    />
+                  </label>
+                ) : null}
+                <button
+                  onClick={() => void save()}
+                  disabled={
+                    saving ||
+                    (!uncertain && duplicates.length > 0 && !keepDuplicate)
+                  }
+                >
+                  {saving
+                    ? "Guardando…"
+                    : uncertain
+                      ? "Reintentar la misma operación"
+                      : "Confirmar"}
+                </button>
+                <button
+                  onClick={() => {
+                    setReview(null);
+                    operationKey.current = null;
+                    try {
+                      forgetPending(window.sessionStorage);
+                    } catch {}
+                  }}
+                  disabled={saving || uncertain}
+                >
+                  Volver
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
       <section className="settlement" aria-labelledby="list-title">
         <h2 id="list-title">Gastos registrados</h2>
         <div className="filters">
@@ -813,7 +859,7 @@ export default function ExpenseWorkspace() {
           </>
         )}
       </section>
-      {summary ? (
+      {summary && !entry ? (
         <section className="settlement">
           <h2>Propuesta de devoluciones</h2>
           <p>
@@ -846,7 +892,6 @@ export default function ExpenseWorkspace() {
           ))}
         </section>
       ) : null}
-      <CsvReview onUse={useCsv} disabled={!!review || saving} />
       <footer>CUSCO · CUENTAS CLARAS</footer>
     </main>
   );

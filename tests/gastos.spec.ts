@@ -64,7 +64,7 @@ test("revisión obligatoria, guardado explícito y búsqueda", async ({
     expect(route.request().postDataJSON().amountMinor).toBe("1000");
     return route.fulfill({ json: { expense } });
   });
-  await page.goto("/gastos");
+  await page.goto("/gastos/nuevo/individual");
   await expect(
     page.getByText("El viaje todavía no tiene gastos. Registra el primero."),
   ).toBeVisible();
@@ -109,7 +109,7 @@ test("un resultado incierto mantiene la clave incluso tras un 429", async ({
       return route.fulfill({ status: 429, json: { error: "Límite" } });
     return route.fulfill({ json: { expense } });
   });
-  await page.goto("/gastos");
+  await page.goto("/gastos/nuevo/individual");
   await page.getByLabel("Descripción", { exact: true }).fill("Cena fixture");
   await page.getByLabel("Importe", { exact: true }).fill("10.00");
   await page.getByLabel("Fixture A", { exact: true }).check();
@@ -168,7 +168,7 @@ test("recarga recupera la clave pendiente sin guardar automáticamente", async (
   await page.route("**/api/session", (route) =>
     route.fulfill({ json: { ...context, csrfToken: "A".repeat(43) } }),
   );
-  await page.goto("/gastos");
+  await page.goto("/gastos/nuevo/individual");
   await page.getByLabel("Descripción", { exact: true }).fill("Cena fixture");
   await page.getByLabel("Importe", { exact: true }).fill("10.00");
   await page.getByLabel("Fixture A", { exact: true }).check();
@@ -204,7 +204,7 @@ test("un primer rechazo inequívoco no deja una operación incierta recuperable"
           json: { error: "Revisa los datos del gasto." },
         }),
   );
-  await page.goto("/gastos");
+  await page.goto("/gastos/nuevo/individual");
   await page.getByLabel("Descripción", { exact: true }).fill("Cena fixture");
   await page.getByLabel("Importe", { exact: true }).fill("10.00");
   await page.getByLabel("Fixture A", { exact: true }).check();
@@ -219,6 +219,124 @@ test("un primer rechazo inequívoco no deja una operación incierta recuperable"
   await expect(
     page.getByRole("button", { name: "Volver", exact: true }),
   ).toBeEnabled();
+});
+
+test("dashboard reúne los métodos y conserva la consulta sin formulario", async ({
+  page,
+}) => {
+  await mockSession(page);
+  let writes = 0;
+  await page.route("**/api/expenses", (route) => {
+    if (route.request().method() !== "GET") writes++;
+    return route.fulfill({ json: { expenses: [expense] } });
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("region", { name: "Resumen por moneda" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Cena fixture" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Descripción", { exact: true })).toHaveCount(0);
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await page
+    .getByRole("link", { name: "Ingresar gastos", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "¿Cómo quieres ingresarlos?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /02 \/ REGISTRO MASIVO/ }),
+  ).toHaveAttribute("href", "/gastos/nuevo/lote#manual-rows");
+  await expect(
+    page.getByRole("link", { name: /03 \/ ARCHIVO/ }),
+  ).toHaveAttribute("href", "/gastos/nuevo/lote#prepare-data");
+  await page.getByRole("link", { name: /01 \/ INDIVIDUAL/ }).click();
+  await expect(page.getByLabel("Descripción", { exact: true })).toBeVisible();
+  expect(writes).toBe(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("dashboard permite editar y anular con revisión explícita", async ({
+  page,
+}) => {
+  await mockSession(page);
+  let writes = 0;
+  await page.route("**/api/expenses", (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({ json: { expenses: [expense] } });
+    writes++;
+    expect(route.request().postDataJSON().operation).toBe("void");
+    return route.fulfill({
+      json: { expense: { ...expense, state: "voided" } },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Editar", exact: true }).click();
+  await expect(page.getByLabel("Descripción", { exact: true })).toHaveValue(
+    expense.description,
+  );
+  await expect(page.getByLabel("Descripción", { exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Cancelar edición" }).click();
+  await expect(page.getByLabel("Descripción", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Anular", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirmar anulación" }),
+  ).toBeVisible();
+  expect(writes).toBe(0);
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  await expect(
+    page.getByText("Gasto guardado.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cena fixture" })).toHaveCount(
+    0,
+  );
+  expect(writes).toBe(1);
+});
+
+test("cambiar de método protege el gasto sin guardar", async ({ page }) => {
+  await mockSession(page);
+  await page.route("**/api/expenses", (route) =>
+    route.fulfill({ json: { expenses: [] } }),
+  );
+  await page.goto("/gastos/nuevo/individual");
+  await page.getByLabel("Descripción", { exact: true }).fill("Borrador local");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("link", { name: "Cambiar método de ingreso" }).click();
+  await expect(page.getByLabel("Descripción", { exact: true })).toHaveValue(
+    "Borrador local",
+  );
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("link", { name: "Cambiar método de ingreso" }).click();
+  await expect(
+    page.getByRole("heading", { name: "¿Cómo quieres ingresarlos?" }),
+  ).toBeVisible();
+});
+
+test("lote y archivo comparten la revisión y el enlace anterior sigue funcionando", async ({
+  page,
+}) => {
+  await mockSession(page);
+  await page.route("**/api/imports", (route) =>
+    route.fulfill({ json: { jobs: [] } }),
+  );
+  await page.goto("/gastos/nuevo");
+  await page.getByRole("link", { name: /02 \/ REGISTRO MASIVO/ }).click();
+  await expect(
+    page.getByRole("button", { name: "Añadir fila manual" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Cambiar método de ingreso" }).click();
+  await page.getByRole("link", { name: /03 \/ ARCHIVO/ }).click();
+  await expect(page.getByLabel("Archivo CSV o Excel")).toBeVisible();
+  await page.goto("/importar");
+  await expect(page).toHaveURL(/\/gastos\/nuevo\/lote$/);
+  await expect(
+    page.getByRole("heading", { name: "Borradores y resultados privados" }),
+  ).toBeVisible();
 });
 
 test("tabla en escritorio y tarjetas en móvil conservan reparto y acciones", async ({
@@ -259,7 +377,5 @@ test("tabla en escritorio y tarjetas en móvil conservan reparto y acciones", as
   await page
     .getByRole("button", { name: "Cancelar edición", exact: true })
     .click();
-  await expect(
-    page.getByRole("heading", { name: "Registrar un gasto", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Descripción", { exact: true })).toHaveCount(0);
 });
