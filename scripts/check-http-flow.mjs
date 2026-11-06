@@ -18,7 +18,9 @@ try {
     loopback.includes(database.hostname) &&
       database.pathname === "/cusco_test" &&
       database.port === (env.PGPORT || "5432") &&
-      origin.origin === "http://127.0.0.1:3000" &&
+      ["http://127.0.0.1:3000", "http://127.0.0.1:3002"].includes(
+        origin.origin,
+      ) &&
       origin.href === `${origin.origin}/`,
   );
   const { Client } = await import("pg");

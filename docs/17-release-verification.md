@@ -36,7 +36,7 @@ Revisiones independientes de autorización/dinero, parser/archivos, UI, CSP y op
 
 Respaldo real cifrado con age, descifrado/catálogo y SHA256 verificados, fuera de Git y descargable; identidad privada en archivo separado, con permisos 600. Cuenta de backup solo lectura, vencimiento de 30 minutos y 2 conexiones; cuenta y políticas retiradas y comprobadas. El filtro TOC elimina solo las políticas de esa cuenta al restaurar. La restauración completa se ensayó con datos sintéticos en la instancia CI existente; no se sobrescribió producción.
 
-Rollback: volver a la versión previa de Vercel manteniendo las migraciones aditivas. El contrato previo de gastos/pagos sigue compatible. No usar DROP ni una restauración destructiva para revertir una publicación de interfaz.
+Rollback: volver a la versión previa de Vercel manteniendo las migraciones aditivas. El contrato previo de gastos/pagos sigue compatible. No usar DROP ni una restauración destructiva para revertir una publicación de interfaz. El workflow Database también compila el commit previo de producción 2c8caa7 y ejecuta su BFF contra el esquema migrado de la misma instancia efímera, sin crear otra base ni usar secretos reales. Ese ensayo cubre sesión, gasto idempotente, pago confirmado, saldo y revocación después de volver al código anterior.
 
 ## Gates
 

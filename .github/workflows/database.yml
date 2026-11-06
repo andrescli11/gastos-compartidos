@@ -68,3 +68,37 @@ jobs:
           NODE
           node scripts/check-http-flow.mjs
           node scripts/check-browser-flow.mjs
+
+      - name: Check out the prior production release for rollback compatibility
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 2c8caa7c8edb128e50e81275ae722cabff0c8e7d
+          path: .rollback-source
+          persist-credentials: false
+      - name: Build prior application against the migrated database
+        working-directory: .rollback-source
+        run: |
+          npm ci
+          npm run build
+      - name: Rehearse application rollback without reverting the database
+        env:
+          PORT: 3002
+          APP_URL: http://127.0.0.1:3002
+        shell: bash
+        run: |
+          npm run start --prefix .rollback-source > /tmp/cusco-rollback-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          node --input-type=module <<'NODE'
+          let ready = false;
+          const deadline = Date.now() + 30000;
+          while (Date.now() < deadline) {
+            try {
+              const r = await fetch(`${process.env.APP_URL}/entrar`, { signal: AbortSignal.timeout(1000) });
+              if (r.ok) { ready = true; break; }
+            } catch {}
+            await new Promise(resolve => setTimeout(resolve, 250));
+          }
+          if (!ready) process.exitCode = 1;
+          NODE
+          node scripts/check-http-flow.mjs
