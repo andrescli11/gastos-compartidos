@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-if (process.env.CUSCO_DB_TEST_DISPOSABLE !== "yes")
-  throw new Error("Disposable database required.");
+if (
+  process.env.CI !== "true" ||
+  process.env.GITHUB_ACTIONS !== "true" ||
+  process.env.CUSCO_DB_TEST_DISPOSABLE !== "yes" ||
+  process.env.PGDATABASE !== "cusco_test" ||
+  !["127.0.0.1", "localhost", "::1", "[::1]"].includes(process.env.PGHOST ?? "")
+)
+  throw new Error("Only the disposable loopback CI database is accepted.");
 const run = (statement) =>
   new Promise((resolve) => {
     const process = spawn(
