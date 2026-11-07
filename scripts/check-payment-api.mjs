@@ -270,6 +270,70 @@ const stale = new PaymentRepository({
   },
 });
 await assert.rejects(stale.context(token), (e) => e.code === "STALE_VERSION");
+// Expense-attributed registration never trusts browser allocation amounts.
+validatePaymentCommand({ ...cmd, expenseIds: [id] });
+for (const expenseIds of [
+  [],
+  [id, id],
+  [id, id.toUpperCase()],
+  ["invalid"],
+  Array(201).fill(id),
+  null,
+]) {
+  assert.throws(
+    () => validatePaymentCommand({ ...cmd, expenseIds }),
+    (e) => e.code === "INVALID_INPUT",
+  );
+}
+assert.throws(
+  () =>
+    validatePaymentCommand({
+      ...cmd,
+      expenseIds: [id],
+      expenseAllocations: [{ expenseId: id, amountMinor: "100" }],
+    }),
+  (e) => e.code === "INVALID_INPUT",
+);
+const position = {
+  expenseId: id,
+  senderId: b,
+  receiverId: a,
+  currency: "PEN",
+  amountMinor: "100",
+  confirmedMinor: "40",
+  pendingMinor: "20",
+  remainingMinor: "60",
+  description: "Fixture",
+  spentOn: "2026-01-01",
+};
+const attributedContext = {
+  ...context,
+  payments: [],
+  positions: [position],
+  reconciliationRequired: [],
+};
+assert.deepEqual(parsePaymentContext(attributedContext).positions, [position]);
+for (const positions of [
+  [{ ...position, remainingMinor: "61" }],
+  [{ ...position, pendingMinor: "-1" }],
+  [{ ...position, senderId: a }],
+  [position, position],
+  [{ ...position, expenseId: link }],
+]) {
+  assert.throws(
+    () => parsePaymentContext({ ...attributedContext, positions }),
+    (e) => e.code === "UNAVAILABLE",
+  );
+}
+const stalePosition = new PaymentRepository({
+  query: async () => {
+    throw { code: "40001", message: "payment_positions_conflict" };
+  },
+});
+await assert.rejects(
+  stalePosition.context(token),
+  (e) => e.code === "STALE_VERSION",
+);
 console.log(
   "OK: pagos API/SQL parametrizados, contratos monetarios, versiones revisadas, motivo privado, CSRF y resumen con saldo vigente.",
 );

@@ -115,9 +115,7 @@ try {
 
     stage = "administrator browser session";
     const adminBrowser = await enter(admin, viewport);
-    await adminBrowser.page
-      .getByRole("link", { name: "Liquidar saldos", exact: true })
-      .click();
+    await adminBrowser.page.goto(`${base}/administrar/liquidacion`);
     await adminBrowser.page.getByLabel("Modo", { exact: true }).waitFor();
     assert.equal(
       await adminBrowser.page.getByLabel("Modo", { exact: true }).inputValue(),
@@ -134,7 +132,10 @@ try {
         await configuration.click();
         await command(adminBrowser.page, "/api/payments", () =>
           adminBrowser.page
-            .getByRole("button", { name: "Confirmar operación", exact: true })
+            .getByRole("button", {
+              name: "Confirmar configuración",
+              exact: true,
+            })
             .click(),
         );
       }
@@ -247,11 +248,10 @@ try {
       .getByRole("link", { name: "Liquidar saldos", exact: true })
       .click();
     await bBrowser.page
-      .getByLabel("Receptor", { exact: true })
-      .selectOption(a.id);
-    await bBrowser.page.getByLabel("Importe", { exact: true }).fill("1.00");
+      .getByRole("button", { name: "Saldar total PEN", exact: true })
+      .click();
     await bBrowser.page
-      .getByRole("button", { name: "Revisar pago", exact: true })
+      .getByRole("button", { name: "Ya realicé el pago", exact: true })
       .click();
     const before = await browserJson(bBrowser.page, "/api/payments");
     assert.equal(

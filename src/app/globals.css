@@ -874,3 +874,115 @@ fieldset {
 .home-filter-panel[open] > summary {
   margin-bottom: 6px;
 }
+
+.settlement-page-header {
+  padding: 16px 0;
+  min-height: 0;
+}
+.settlement-page-header > p {
+  font-size: 14px;
+}
+.settlement-participant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 20px 0;
+  max-width: 360px;
+}
+.settlement-participant select {
+  width: 100%;
+}
+.settlement-debts {
+  margin: 24px 0;
+}
+.settlement-debts > h2 {
+  margin-bottom: 10px;
+}
+.settlement-person-card,
+.settlement-payment-draft {
+  padding: 20px;
+  border: 1px solid #d4dbd1;
+  border-radius: 12px;
+  background: #fff;
+  margin: 16px 0;
+}
+.settlement-person-card > .eyebrow {
+  margin: 0 0 6px;
+}
+.settlement-person-card > h3 {
+  margin: 0 0 16px;
+  font-size: 24px;
+}
+.settlement-person-totals {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.settlement-person-totals > div {
+  flex: 1;
+  min-width: 180px;
+}
+.settlement-person-totals strong {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+.settlement-person-totals p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+.settlement-expense-details {
+  margin-top: 16px;
+  border-top: 1px solid #d4dbd1;
+}
+.settlement-expense-details > summary {
+  padding: 14px 0;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.settlement-expense {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid #e4e7df;
+}
+.settlement-expense h4 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.settlement-expense p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+.settlement-expense button {
+  flex-shrink: 0;
+}
+.settlement-payment-draft > h2 {
+  margin: 0 0 12px;
+}
+.settlement-payment-draft > strong {
+  display: block;
+  font-size: 28px;
+}
+.settlement-receivables {
+  border-top: 1px solid #d4dbd1;
+  padding-top: 12px;
+  margin: 24px 0;
+}
+@media (max-width: 600px) {
+  .settlement-person-card,
+  .settlement-payment-draft {
+    padding: 16px;
+  }
+  .settlement-expense {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .settlement-person-totals {
+    gap: 16px;
+  }
+}

@@ -166,6 +166,18 @@ export default function AdminWorkspace() {
         </Link>
       </header>
       <h1>Administrar accesos</h1>
+      {snapshot ? (
+        <p>
+          <Link
+            href="/administrar/liquidacion"
+            onNavigate={(event) => {
+              if (review || busy) event.preventDefault();
+            }}
+          >
+            Configuración de liquidación
+          </Link>
+        </p>
+      ) : null}
       <p>
         Revocar invalida el enlace y sus sesiones. Renovar crea un enlace nuevo
         y deja inutilizable el anterior.
