@@ -12,8 +12,28 @@ import {
   type PaymentActor,
   type PaymentLedger,
 } from "../domain/payments.ts";
+export type PaymentAllocation = { expenseId: string; amountMinor: string };
+export type PaymentPosition = {
+  expenseId: string;
+  senderId: string;
+  receiverId: string;
+  currency: "PEN" | "USD";
+  amountMinor: string;
+  confirmedMinor: string;
+  pendingMinor: string;
+  remainingMinor: string;
+  description: string;
+  spentOn: string;
+};
+export type SettlementReconciliation = {
+  senderId: string;
+  receiverId: string;
+  currency: "PEN" | "USD";
+  amountMinor: string;
+};
 export type PaymentRecord = Omit<Payment, "amountMinor"> & {
   amountMinor: string;
+  expenseAllocations?: PaymentAllocation[];
 };
 export type PaymentContext = {
   actor: {
@@ -32,6 +52,8 @@ export type PaymentContext = {
   participants: string[];
   expenses: ExpenseRecord[];
   payments: PaymentRecord[];
+  positions?: PaymentPosition[];
+  reconciliationRequired?: SettlementReconciliation[];
 };
 export type PaymentCommand =
   | {
@@ -41,6 +63,7 @@ export type PaymentCommand =
       amountMinor: string;
       currency: "PEN" | "USD";
       expectedLedgerVersion: number;
+      expenseIds?: string[];
     }
   | {
       operation: "confirm";
@@ -100,6 +123,18 @@ export function validatePaymentCommand(
       "currency",
       "expectedLedgerVersion",
     ];
+    if (v.expenseIds !== undefined) {
+      allowed.push("expenseIds");
+      if (
+        !Array.isArray(v.expenseIds) ||
+        v.expenseIds.length < 1 ||
+        v.expenseIds.length > 200 ||
+        v.expenseIds.some((id) => !uuid(id)) ||
+        new Set(v.expenseIds.map((id) => String(id).toLowerCase())).size !==
+          v.expenseIds.length
+      )
+        invalid();
+    }
     if (
       !uuid(v.senderId) ||
       !uuid(v.receiverId) ||
@@ -253,7 +288,32 @@ export function parsePaymentContext(value: unknown): PaymentContext {
       v.voidReason !== null
     )
       throw new PersistenceError("UNAVAILABLE");
+    let expenseAllocations: PaymentAllocation[] | undefined;
+    if (v.expenseAllocations !== undefined) {
+      if (
+        !Array.isArray(v.expenseAllocations) ||
+        v.expenseAllocations.length > 200 ||
+        v.expenseAllocations.some(
+          (part) =>
+            !object(part) ||
+            !uuid(part.expenseId) ||
+            !positive(part.amountMinor),
+        )
+      )
+        throw new PersistenceError("UNAVAILABLE");
+      expenseAllocations = v.expenseAllocations as PaymentAllocation[];
+      if (
+        new Set(expenseAllocations.map((part) => part.expenseId)).size !==
+          expenseAllocations.length ||
+        expenseAllocations.reduce(
+          (sum, part) => sum + BigInt(part.amountMinor),
+          0n,
+        ) > BigInt(v.amountMinor)
+      )
+        throw new PersistenceError("UNAVAILABLE");
+    }
     return {
+      ...(expenseAllocations === undefined ? {} : { expenseAllocations }),
       id: v.id,
       senderId: v.senderId,
       receiverId: v.receiverId,
@@ -290,6 +350,68 @@ export function parsePaymentContext(value: unknown): PaymentContext {
     expenses: value.expenses.map(parseExpenseRecord),
     payments,
   };
+  const nonnegative = (v: unknown): v is string =>
+    typeof v === "string" && /^(0|[1-9][0-9]{0,35})$/.test(v);
+  if (value.positions !== undefined) {
+    if (
+      !Array.isArray(value.positions) ||
+      value.positions.some(
+        (part) =>
+          !object(part) ||
+          !uuid(part.expenseId) ||
+          !uuid(part.senderId) ||
+          !uuid(part.receiverId) ||
+          part.senderId === part.receiverId ||
+          !["PEN", "USD"].includes(String(part.currency)) ||
+          !positive(part.amountMinor, 36) ||
+          !nonnegative(part.confirmedMinor) ||
+          !nonnegative(part.pendingMinor) ||
+          !nonnegative(part.remainingMinor) ||
+          typeof part.description !== "string" ||
+          part.description.length > 240 ||
+          typeof part.spentOn !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(part.spentOn),
+      )
+    )
+      throw new PersistenceError("UNAVAILABLE");
+    context.positions = value.positions as PaymentPosition[];
+    const seen = new Set<string>();
+    for (const part of context.positions) {
+      const key = `${part.expenseId}:${part.senderId}`;
+      const expected =
+        BigInt(part.amountMinor) > BigInt(part.confirmedMinor)
+          ? BigInt(part.amountMinor) - BigInt(part.confirmedMinor)
+          : 0n;
+      if (
+        seen.has(key) ||
+        !context.participants.includes(part.senderId) ||
+        !context.participants.includes(part.receiverId) ||
+        !context.expenses.some((expense) => expense.id === part.expenseId) ||
+        BigInt(part.remainingMinor) !== expected
+      )
+        throw new PersistenceError("UNAVAILABLE");
+      seen.add(key);
+    }
+  }
+  if (value.reconciliationRequired !== undefined) {
+    if (
+      !Array.isArray(value.reconciliationRequired) ||
+      value.reconciliationRequired.some(
+        (part) =>
+          !object(part) ||
+          !uuid(part.senderId) ||
+          !uuid(part.receiverId) ||
+          part.senderId === part.receiverId ||
+          !["PEN", "USD"].includes(String(part.currency)) ||
+          !positive(part.amountMinor, 36) ||
+          !context.participants.includes(part.senderId as string) ||
+          !context.participants.includes(part.receiverId as string),
+      )
+    )
+      throw new PersistenceError("UNAVAILABLE");
+    context.reconciliationRequired =
+      value.reconciliationRequired as SettlementReconciliation[];
+  }
   if (context.expenses.some((e) => e.state !== "active"))
     throw new PersistenceError("UNAVAILABLE");
   try {
@@ -311,6 +433,7 @@ function failure(e: unknown): never {
       "ledger_version_conflict",
       "payment_version_conflict",
       "payment_review_conflict",
+      "payment_positions_conflict",
     ].includes(e.message as string)
   )
     throw new PersistenceError("STALE_VERSION");

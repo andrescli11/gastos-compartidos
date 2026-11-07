@@ -7,8 +7,7 @@ import type {
 } from "../server/payment-repository";
 import type { summarizePaymentLedger } from "../domain/payment-summary";
 import type { ConfirmationWarning } from "../domain/payments";
-import { formatMoney, parseMoney, type Currency } from "../domain/money";
-import { parseExchangeRate } from "../domain/settlement";
+import { formatMoney, type Currency } from "../domain/money";
 import {
   rememberPending,
   recoverPending,
@@ -65,18 +64,42 @@ const states = {
   rejected: "Rechazado",
   voided: "Anulado",
 };
+type Position = {
+  expenseId: string;
+  senderId: string;
+  receiverId: string;
+  currency: Currency;
+  amountMinor: string;
+  confirmedMinor: string;
+  pendingMinor: string;
+  remainingMinor: string;
+  description: string;
+  spentOn: string;
+};
+function available(position: Position) {
+  const value = BigInt(position.remainingMinor) - BigInt(position.pendingMinor);
+  return value > 0n ? value : 0n;
+}
+function sumPositions(
+  positions: Position[],
+  kind: "remainingMinor" | "pendingMinor" | "available",
+) {
+  return positions.reduce(
+    (sum, p) => sum + (kind === "available" ? available(p) : BigInt(p[kind])),
+    0n,
+  );
+}
 export default function PaymentWorkspace() {
   const [session, setSession] = useState<Session | null>(null),
     [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
-  const [sender, setSender] = useState(""),
-    [receiver, setReceiver] = useState(""),
-    [amount, setAmount] = useState(""),
-    [currency, setCurrency] = useState<Currency>("PEN"),
-    [mode, setMode] = useState("separate"),
-    [rate, setRate] = useState(""),
-    [reasons, setReasons] = useState<Record<string, string>>({});
+  const [sender, setSender] = useState("");
+  const [paymentDraft, setPaymentDraft] = useState<Extract<
+    PaymentCommand,
+    { operation: "register" }
+  > | null>(null);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [review, setReview] = useState<PendingOperation<PaymentCommand> | null>(
       null,
     ),
@@ -116,10 +139,6 @@ export default function PaymentWorkspace() {
           setSession(s);
           setSnapshot(data);
           setSender(s.participantId ?? s.participants[0]?.id ?? "");
-          setMode(data.context.configuration.mode);
-          if (data.context.configuration.mode === "consolidated") {
-            setCurrency("PEN");
-          }
           if (pending) {
             setReview(pending);
             setUncertain(true);
@@ -139,14 +158,14 @@ export default function PaymentWorkspace() {
     void load();
   }, [load]); // Session and ledger are always loaded together.
   useEffect(() => {
-    if (!saving && !uncertain) return;
+    if (!saving && !uncertain && !review && !paymentDraft) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [saving, uncertain]);
+  }, [saving, uncertain, review, paymentDraft]);
   const name = (id: string) =>
     session?.participants.find((p) => p.id === id)?.displayName ?? id;
   const money = (value: string, c: Currency) => formatMoney(BigInt(value), c);
@@ -157,6 +176,11 @@ export default function PaymentWorkspace() {
     setMessage("");
     setAck(false);
     setReview({ key: crypto.randomUUID(), command });
+    requestAnimationFrame(() =>
+      document
+        .getElementById("payment-confirmation")
+        ?.scrollIntoView({ block: "center" }),
+    );
   }
   async function submit() {
     if (!session || !review || saving) return;
@@ -191,13 +215,16 @@ export default function PaymentWorkspace() {
       setReview(null);
       setUncertain(false);
       setSnapshot(null);
-      setAmount("");
-      setMessage("Operación registrada.");
+      setPaymentDraft(null);
+      setMessage(
+        review.command.operation === "register"
+          ? "Pago registrado. Esperando confirmación del receptor."
+          : review.command.operation === "confirm"
+            ? "Recepción confirmada. Los saldos se actualizaron."
+            : "Operación registrada.",
+      );
       const fresh = await api<Snapshot>("/api/payments");
       setSnapshot(fresh);
-      setMode(fresh.context.configuration.mode);
-      if (fresh.context.configuration.mode === "consolidated")
-        setCurrency("PEN");
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         fail(e);
@@ -210,6 +237,7 @@ export default function PaymentWorkspace() {
           forgetPending(sessionStorage, "payments");
         } catch {}
         setReview(null);
+        setPaymentDraft(null);
         setUncertain(false);
         setSnapshot(null);
         setAck(false);
@@ -267,30 +295,90 @@ export default function PaymentWorkspace() {
     command?.operation === "confirm"
       ? (snapshot.warnings.find((w) => w.paymentId === reviewedId)?.codes ?? [])
       : [];
+  const positions = context.positions ?? [];
+  const currentSender = admin ? sender : (session.participantId ?? "");
+  const outgoing = positions.filter(
+    (p) => p.senderId === currentSender && BigInt(p.remainingMinor) > 0n,
+  );
+  const receivers = session.participants.filter((p) =>
+    outgoing.some((position) => position.receiverId === p.id),
+  );
+  const reconciliations = context.reconciliationRequired ?? [];
+  const reconciliation = reconciliations.some(
+    (p) => p.senderId === currentSender || p.receiverId === currentSender,
+  );
+  const canChoose =
+    !blocked && !paymentDraft && summary.configurationChosen && !reconciliation;
+  const relatedPayments = context.payments.filter(
+    (p) =>
+      admin || p.senderId === currentSender || p.receiverId === currentSender,
+  );
+  const incoming = positions.filter(
+    (p) => p.receiverId === currentSender && BigInt(p.remainingMinor) > 0n,
+  );
+  function choosePayment(selected: Position[]) {
+    if (!canChoose || !selected.length) return;
+    const first = selected[0];
+    const payable = selected.filter((p) => available(p) > 0n);
+    if (payable.length > 200) {
+      setError(
+        "Este pago reúne más de 200 gastos. Despliega el detalle y salda los gastos individualmente.",
+      );
+      return;
+    }
+    const total = sumPositions(payable, "available");
+    if (
+      total <= 0n ||
+      payable.some(
+        (p) =>
+          p.senderId !== currentSender ||
+          p.receiverId !== first.receiverId ||
+          p.currency !== first.currency,
+      )
+    )
+      return;
+    setError("");
+    setMessage("");
+    setPaymentDraft({
+      operation: "register",
+      senderId: currentSender,
+      receiverId: first.receiverId,
+      currency: first.currency,
+      amountMinor: total.toString(),
+      expenseIds: payable.map((p) => p.expenseId),
+      expectedLedgerVersion: context.ledgerVersion,
+    });
+    requestAnimationFrame(() =>
+      document
+        .getElementById("settlement-payment-review")
+        ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+  }
   return (
     <main>
-      <header className="payment-header">
+      <header className="payment-header settlement-page-header">
         <Link
-          href="/gastos"
+          href="/"
           onNavigate={(event) => {
+            if (saving || uncertain) {
+              event.preventDefault();
+              return;
+            }
             if (
-              (saving || uncertain) &&
+              (review || paymentDraft) &&
               !window.confirm(
-                "Hay una operación pendiente de comprobar. ¿Quieres salir de pagos?",
+                "Hay un pago sin confirmar. ¿Quieres descartarlo y volver al inicio?",
               )
             )
               event.preventDefault();
           }}
         >
-          ← Gastos
+          ← Volver al inicio
         </Link>
-        <h1>Pagos y cierre</h1>
-        <button disabled={blocked} onClick={reload}>
-          Actualizar libro
-        </button>
+        <h1>Liquidar saldos</h1>
         <p>
-          Solo registra transferencias realizadas fuera de la aplicación. Esta
-          aplicación no envía dinero.
+          Realiza la transferencia fuera del app y registra el pago. El receptor
+          confirmará que lo recibió.
         </p>
       </header>
       {error && (
@@ -299,207 +387,233 @@ export default function PaymentWorkspace() {
         </p>
       )}
       {message && <p role="status">{message}</p>}
-      <section className="preview">
-        <h2>Libro vigente · versión {context.ledgerVersion}</h2>
-        <p>
-          Totales originales: {money(summary.originalExpenseTotals.PEN, "PEN")}{" "}
-          y {money(summary.originalExpenseTotals.USD, "USD")}.
-        </p>
-        <p>
-          Liquidación:{" "}
-          {context.configuration.mode === "separate"
-            ? "monedas separadas"
-            : `consolidada en PEN · tasa ${context.configuration.rate.numerator}/${context.configuration.rate.denominator} PEN por USD`}
-          .
-        </p>
-        <p>
-          {summary.configurationChosen
-            ? "Configuración elegida por administración."
-            : "Falta la elección administrativa antes de confirmar pagos."}{" "}
-          {summary.configurationLocked
-            ? "Configuración bloqueada por pagos pendientes o confirmados."
-            : ""}
-        </p>
-        <p>
-          {summary.closed
-            ? "Cuentas saldadas."
-            : "Quedan saldos o pagos pendientes."}
-        </p>
-        {(["PEN", "USD"] as const).map((c) => (
-          <div key={c}>
-            <h3>{c}</h3>
-            {summary.books[c].balances.map((b) => (
-              <p key={b.participantId}>
-                {name(b.participantId)}: {money(b.amountMinor, c)}
-              </p>
-            ))}
-            <h4>
-              {summary.books[c].minimumProven
-                ? "Transferencias propuestas · mínimo probado"
-                : "Propuesta optimizada"}
-            </h4>
-            {summary.books[c].transfers.length ? (
-              summary.books[c].transfers.map((t, i) => (
-                <p key={i}>
-                  {name(t.senderId)} → {name(t.receiverId)}:{" "}
-                  {money(t.amountMinor, c)}
-                </p>
-              ))
-            ) : (
-              <p>Sin transferencias propuestas.</p>
-            )}
-          </div>
-        ))}
-      </section>
-      {admin && (
-        <form
-          className="editor expense-fields"
-          onSubmit={(e) => {
-            e.preventDefault();
-            try {
-              if (mode === "separate")
-                prepare({
-                  operation: "configure",
-                  mode: "separate",
-                  expectedLedgerVersion: context.ledgerVersion,
-                });
-              else {
-                const r = parseExchangeRate(rate);
-                prepare({
-                  operation: "configure",
-                  mode: "consolidated",
-                  rateNumerator: r.numerator.toString(),
-                  rateDenominator: r.denominator.toString(),
-                  expectedLedgerVersion: context.ledgerVersion,
-                });
-              }
-            } catch {
-              setError("Introduce una tasa positiva válida.");
-            }
-          }}
-        >
-          <h2>Configuración de liquidación</h2>
-          <label htmlFor="settlement-mode">Modo</label>
-          <select
-            id="settlement-mode"
-            disabled={blocked || summary.configurationLocked}
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-          >
-            <option value="separate">Monedas separadas</option>
-            <option value="consolidated">Consolidar en PEN</option>
-          </select>
-          {mode === "consolidated" && (
+      {!summary.configurationChosen ? (
+        <aside className="notice" role="status">
+          El administrador debe elegir el modo de liquidación antes de registrar
+          pagos.
+          {admin ? (
             <>
-              <label htmlFor="settlement-rate">PEN por USD</label>
-              <input
-                id="settlement-rate"
-                disabled={blocked || summary.configurationLocked}
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                inputMode="decimal"
-                required
-              />
+              {" "}
+              <Link href="/administrar/liquidacion">
+                Configurar liquidación
+              </Link>
             </>
-          )}
-          <button
-            disabled={
-              blocked ||
-              (summary.configurationLocked && summary.configurationChosen)
-            }
+          ) : null}
+        </aside>
+      ) : null}
+      {admin ? (
+        <label className="settlement-participant">
+          Participante para liquidar
+          <select
+            aria-label="Participante para liquidar"
+            value={currentSender}
+            disabled={blocked || !!paymentDraft}
+            onChange={(e) => setSender(e.target.value)}
           >
-            Revisar configuración
-          </button>
-        </form>
-      )}
-      <form
-        className="editor expense-fields"
-        onSubmit={(e) => {
-          e.preventDefault();
-          try {
-            if (!sender || !receiver || sender === receiver) throw new Error();
-            prepare({
-              operation: "register",
-              senderId: admin ? sender : session.participantId!,
-              receiverId: receiver,
-              amountMinor: parseMoney(amount).toString(),
-              currency,
-              expectedLedgerVersion: context.ledgerVersion,
-            });
-          } catch {
-            setError(
-              "Revisa emisor, receptor e importe positivo con hasta dos decimales.",
-            );
-          }
-        }}
-      >
-        <h2>Registrar pago externo</h2>
-        <label htmlFor="payment-sender">Emisor</label>
-        <select
-          id="payment-sender"
-          disabled={blocked || !admin}
-          value={sender}
-          onChange={(e) => setSender(e.target.value)}
-        >
-          {session.participants.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.displayName}
-            </option>
-          ))}
-        </select>
-        <label htmlFor="payment-receiver">Receptor</label>
-        <select
-          id="payment-receiver"
-          disabled={blocked}
-          value={receiver}
-          onChange={(e) => setReceiver(e.target.value)}
-          required
-        >
-          <option value="">Selecciona receptor</option>
-          {session.participants
-            .filter((p) => p.id !== sender)
-            .map((p) => (
+            {session.participants.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.displayName}
               </option>
             ))}
-        </select>
-        <label htmlFor="payment-amount">Importe</label>
-        <input
-          id="payment-amount"
-          disabled={blocked}
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          inputMode="decimal"
-          required
-        />
-        <label htmlFor="payment-currency">Moneda</label>
-        <select
-          id="payment-currency"
-          disabled={blocked}
-          value={currency}
-          onChange={(e) => setCurrency(e.target.value as Currency)}
-        >
-          <option>PEN</option>
-          {context.configuration.mode === "separate" && <option>USD</option>}
-        </select>
-        <p>
-          Puede ser un pago parcial. El receptor debe confirmarlo para que
-          afecte los saldos.
+          </select>
+        </label>
+      ) : null}
+      <section
+        className="settlement-debts"
+        aria-labelledby="settlement-debts-heading"
+      >
+        <h2 id="settlement-debts-heading">
+          {admin
+            ? `Saldos de ${name(currentSender)}`
+            : "Tus saldos pendientes de pago"}
+        </h2>
+        <p className="hint">
+          Partes pendientes de los gastos de cada persona. Los importes en
+          espera de confirmación ya están reservados.
         </p>
-        <button disabled={blocked}>Revisar pago</button>
-      </form>
+        {context.positions === undefined ? (
+          <p role="alert">
+            No se pudo cargar el detalle de las deudas. Vuelve a abrir esta
+            página antes de pagar.
+          </p>
+        ) : reconciliation ? (
+          <p role="alert" className="notice">
+            Hay pagos anteriores que requieren conciliación administrativa. Por
+            seguridad, no registres otro pago hasta que se revisen.
+          </p>
+        ) : null}
+        {context.positions !== undefined &&
+        !receivers.length &&
+        !reconciliation ? (
+          <p>No tienes saldos pendientes de pago.</p>
+        ) : null}
+        {receivers.map((person) => {
+          const personPositions = outgoing.filter(
+            (p) => p.receiverId === person.id,
+          );
+          return (
+            <article
+              className="settlement-person-card"
+              key={person.id}
+              aria-label={`Deudas con ${person.displayName}`}
+            >
+              <p className="eyebrow">LE DEBES A</p>
+              <h3>{person.displayName}</h3>
+              <div className="settlement-person-totals">
+                {(["PEN", "USD"] as const).map((currency) => {
+                  const shares = personPositions.filter(
+                    (p) => p.currency === currency,
+                  );
+                  if (!shares.length) return null;
+                  const pending = sumPositions(shares, "pendingMinor");
+                  const free = sumPositions(shares, "available");
+                  return (
+                    <div key={currency}>
+                      <strong>
+                        {money(
+                          sumPositions(shares, "remainingMinor").toString(),
+                          currency,
+                        )}
+                      </strong>
+                      {pending > 0n ? (
+                        <p>
+                          Esperando confirmación:{" "}
+                          {money(pending.toString(), currency)}
+                        </p>
+                      ) : null}
+                      <button
+                        disabled={!canChoose || free === 0n}
+                        onClick={() => choosePayment(shares)}
+                      >
+                        Saldar total {currency}
+                      </button>
+                      {pending > 0n && free > 0n ? (
+                        <p className="hint">
+                          Disponible para saldar:{" "}
+                          {money(free.toString(), currency)}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <details className="settlement-expense-details">
+                <summary aria-label={`Ver gastos con ${person.displayName}`}>
+                  Ver gastos con {person.displayName}
+                </summary>
+                {personPositions.map((position) => (
+                  <article
+                    className="settlement-expense"
+                    key={position.expenseId}
+                  >
+                    <div>
+                      <h4>{position.description}</h4>
+                      <p>
+                        {position.spentOn} · Pendiente:{" "}
+                        {money(position.remainingMinor, position.currency)}
+                      </p>
+                      {BigInt(position.pendingMinor) > 0n ? (
+                        <p>
+                          Esperando confirmación:{" "}
+                          {money(position.pendingMinor, position.currency)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      disabled={!canChoose || available(position) === 0n}
+                      onClick={() => choosePayment([position])}
+                    >
+                      Saldar este gasto
+                    </button>
+                  </article>
+                ))}
+              </details>
+            </article>
+          );
+        })}
+      </section>
+      {paymentDraft ? (
+        <section
+          className="settlement-payment-draft"
+          id="settlement-payment-review"
+          aria-labelledby="settlement-review-title"
+        >
+          <h2 id="settlement-review-title">Revisa tu pago</h2>
+          <p>
+            De {name(paymentDraft.senderId)} para{" "}
+            {name(paymentDraft.receiverId)}
+          </p>
+          <strong>
+            {money(paymentDraft.amountMinor, paymentDraft.currency)}
+          </strong>
+          <p>
+            Se aplicará a {paymentDraft.expenseIds?.length ?? 0} gasto(s). El
+            importe y el destinatario corresponden a las deudas seleccionadas.
+          </p>
+          <p>
+            Haz la transferencia por fuera del app. Continúa solo cuando la
+            hayas realizado.
+          </p>
+          <div className="actions">
+            <button
+              disabled={blocked}
+              onClick={() => {
+                prepare(paymentDraft);
+                setPaymentDraft(null);
+              }}
+            >
+              Ya realicé el pago
+            </button>
+            <button disabled={saving} onClick={() => setPaymentDraft(null)}>
+              Cancelar
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {incoming.length ? (
+        <section className="settlement-receivables">
+          <h2>Pendiente de cobrar</h2>
+          {session.participants
+            .filter((p) =>
+              incoming.some((position) => position.senderId === p.id),
+            )
+            .map((p) => (
+              <p key={p.id}>
+                {p.displayName}:{" "}
+                {(["PEN", "USD"] as const)
+                  .flatMap((currency) => {
+                    const value = sumPositions(
+                      incoming.filter(
+                        (position) =>
+                          position.senderId === p.id &&
+                          position.currency === currency,
+                      ),
+                      "remainingMinor",
+                    );
+                    return value > 0n
+                      ? [money(value.toString(), currency)]
+                      : [];
+                  })
+                  .join(" · ")}
+              </p>
+            ))}
+        </section>
+      ) : null}
       <section>
         <h2>Pagos registrados</h2>
-        {context.payments.length === 0 && <p>Aún no hay pagos.</p>}
-        {context.payments.map((p) => (
+        {relatedPayments.length === 0 && <p>Aún no hay pagos.</p>}
+        {relatedPayments.map((p) => (
           <article className="expense-card" key={p.id}>
             <h3>
               {name(p.senderId)} → {name(p.receiverId)} ·{" "}
               {money(p.amountMinor, p.currency)}
             </h3>
             <p>
-              {states[p.state]} · versión {p.version}
+              {p.state === "pending"
+                ? p.senderId === currentSender
+                  ? "Esperando confirmación"
+                  : "Por confirmar recepción"
+                : states[p.state]}
             </p>
             {p.state === "voided" && (
               <p>Motivo: {p.voidReason ?? "Reservado a administración"}</p>
@@ -508,7 +622,9 @@ export default function PaymentWorkspace() {
               (admin || session.participantId === p.receiverId) && (
                 <div className="actions">
                   <button
-                    disabled={blocked || !summary.configurationChosen}
+                    disabled={
+                      blocked || !!paymentDraft || !summary.configurationChosen
+                    }
                     onClick={() =>
                       prepare({
                         operation: "confirm",
@@ -522,7 +638,7 @@ export default function PaymentWorkspace() {
                     Revisar confirmación
                   </button>
                   <button
-                    disabled={blocked}
+                    disabled={blocked || !!paymentDraft}
                     onClick={() =>
                       prepare({
                         operation: "reject",
@@ -542,7 +658,7 @@ export default function PaymentWorkspace() {
                   Motivo de anulación
                   <input
                     maxLength={500}
-                    disabled={blocked}
+                    disabled={blocked || !!paymentDraft}
                     value={reasons[p.id] ?? ""}
                     onChange={(e) =>
                       setReasons({ ...reasons, [p.id]: e.target.value })
@@ -550,7 +666,7 @@ export default function PaymentWorkspace() {
                   />
                 </label>
                 <button
-                  disabled={blocked || !reasons[p.id]?.trim()}
+                  disabled={blocked || !!paymentDraft || !reasons[p.id]?.trim()}
                   onClick={() =>
                     prepare({
                       operation: "void",
@@ -569,7 +685,11 @@ export default function PaymentWorkspace() {
         ))}
       </section>
       {review && (
-        <section className="confirmation" aria-label="Revisión de operación">
+        <section
+          className="confirmation"
+          id="payment-confirmation"
+          aria-label="Revisión de operación"
+        >
           <h2>
             {uncertain
               ? "Operación con resultado incierto"
@@ -604,13 +724,15 @@ export default function PaymentWorkspace() {
           {review.command.operation === "void" && (
             <p>Motivo: {review.command.reason}</p>
           )}
-          {review.command.operation === "configure" && (
+          {review.command.operation === "configure" ? (
             <p>
-              {review.command.mode === "separate"
-                ? "Monedas separadas"
-                : `Consolidar en PEN · tasa ${review.command.rateNumerator}/${review.command.rateDenominator}`}
+              Completa esta operación en{" "}
+              <Link href="/administrar/liquidacion">
+                Configuración de liquidación
+              </Link>
+              .
             </p>
-          )}
+          ) : null}
           <p>
             Versión revisada del libro: {review.command.expectedLedgerVersion}.
           </p>
@@ -631,7 +753,11 @@ export default function PaymentWorkspace() {
           )}
           <div className="actions">
             <button
-              disabled={saving || (warnings.length > 0 && !ack)}
+              disabled={
+                saving ||
+                review.command.operation === "configure" ||
+                (warnings.length > 0 && !ack)
+              }
               onClick={() => void submit()}
             >
               {saving
