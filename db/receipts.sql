@@ -49,7 +49,7 @@ begin
    raise exception using errcode='22023',message='invalid_payment';
   end if;
   sender:=(p_command->>'senderId')::uuid; receiver:=(p_command->>'receiverId')::uuid;
-  if actor.role<>'admin' and actor.participant_id is distinct from case when is_receipt then receiver else sender end then raise exception using errcode='42501',message='payment_forbidden'; end if;
+  if actor.role<>'admin' and actor.participant_id is distinct from (case when is_receipt then receiver else sender end) then raise exception using errcode='42501',message='payment_forbidden'; end if;
   if is_receipt then
    if sender=receiver or jsonb_typeof(p_command->'currency') is distinct from 'string' or p_command->>'currency' not in ('PEN','USD')
      or (current_trip.settlement_mode='consolidated' and p_command->>'currency'<>'PEN')
