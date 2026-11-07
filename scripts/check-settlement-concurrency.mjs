@@ -156,6 +156,104 @@ assert.ok(
     )
   ).ok,
 );
+// A sender starting a payment and its receiver recording money already
+// received race for the same unreserved share. Exactly one command may win.
+state = await snapshot();
+const registerAgain = {
+  ...command,
+  expectedLedgerVersion: state.ledgerVersion,
+};
+const receive = { ...registerAgain, operation: "receive" };
+const raceKeys = [randomUUID(), randomUUID()];
+const opposing = await Promise.all([
+  run(invoke(hashA, raceKeys[0], registerAgain)),
+  run(invoke(hashB, raceKeys[1], receive)),
+]);
+assert.equal(
+  opposing.filter((result) => result.ok).length,
+  1,
+  "sender registration and receiver receipt cannot consume the same expense twice",
+);
+state = await snapshot();
+const racedPayment = state.payments.find(
+  (candidate) =>
+    candidate.senderId === a &&
+    candidate.receiverId === b &&
+    candidate.id !== payment.id,
+);
+assert.ok(racedPayment);
+assert.deepEqual(racedPayment.expenseAllocations, [
+  { expenseId: expense.id, amountMinor: "100" },
+]);
+const raceWinner = opposing.findIndex((result) => result.ok);
+if (raceWinner === 1) {
+  assert.equal(racedPayment.state, "confirmed");
+  assert.equal(racedPayment.createdBy, actorB);
+  assert.equal(racedPayment.confirmedBy, actorB);
+} else {
+  assert.equal(racedPayment.state, "pending");
+  assert.ok(
+    (
+      await run(
+        invoke(hashB, randomUUID(), {
+          operation: "confirm",
+          id: racedPayment.id,
+          expectedPaymentVersion: 1,
+          expectedLedgerVersion: state.ledgerVersion,
+          reviewedLedgerVersion: state.ledgerVersion,
+        }),
+      )
+    ).ok,
+  );
+}
+const replay = await run(
+  invoke(
+    raceWinner === 1 ? hashB : hashA,
+    raceKeys[raceWinner],
+    raceWinner === 1 ? receive : registerAgain,
+  ),
+);
+assert.ok(replay.ok);
+assert.equal(
+  replay.output,
+  opposing[raceWinner].output,
+  "opposing-operation winner replays without changing its original snapshot",
+);
+state = await snapshot();
+assert.equal(
+  state.positions.find((position) => position.expenseId === expense.id)
+    .remainingMinor,
+  "0",
+);
+assert.equal(
+  (
+    await run(
+      `select count(*) from app_private.payment_audit_events where entity_id='${racedPayment.id}' and action='payment.register'`,
+    )
+  ).output,
+  "1",
+);
+assert.equal(
+  (
+    await run(
+      `select count(*) from app_private.payment_audit_events where entity_id='${racedPayment.id}' and action='payment.confirm'`,
+    )
+  ).output,
+  "1",
+);
+assert.ok(
+  (
+    await run(
+      invoke(hashAdmin, randomUUID(), {
+        operation: "void",
+        id: racedPayment.id,
+        expectedPaymentVersion: 2,
+        expectedLedgerVersion: state.ledgerVersion,
+        reason: "Disposable opposing-operation fixture completed",
+      }),
+    )
+  ).ok,
+);
 console.log(
-  "OK: PostgreSQL simultaneous attributed registrations reserve once, with durable retries and one confirmation audit.",
+  "OK: PostgreSQL attributed registration/receipt races reserve once, with durable retries, receiver identity and single confirmation audit.",
 );

@@ -270,6 +270,25 @@ const stale = new PaymentRepository({
   },
 });
 await assert.rejects(stale.context(token), (e) => e.code === "STALE_VERSION");
+// Receiver-originated receipts require explicit attribution and cannot carry
+// forged actor/state metadata. Authorization is enforced in the SQL transaction.
+const receive = { ...cmd, operation: "receive", expenseIds: [id] };
+validatePaymentCommand(receive);
+for (const patch of [
+  { expenseIds: undefined },
+  { expenseIds: [] },
+  { expenseIds: [id, id] },
+  { state: "confirmed" },
+  { createdBy: link },
+  { confirmedBy: link },
+  { amountMinor: "0" },
+  { expectedLedgerVersion: -1 },
+]) {
+  assert.throws(
+    () => validatePaymentCommand({ ...receive, ...patch }),
+    (e) => e.code === "INVALID_INPUT",
+  );
+}
 // Expense-attributed registration never trusts browser allocation amounts.
 validatePaymentCommand({ ...cmd, expenseIds: [id] });
 for (const expenseIds of [

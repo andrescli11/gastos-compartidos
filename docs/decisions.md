@@ -151,3 +151,11 @@ PostgreSQL concede EXECUTE a PUBLIC por defecto de forma global; un REVOKE por e
 **Persistencia:** cada pago nuevo conserva una asignación inmutable a gastos calculada por el servidor bajo el lock del viaje. Los pendientes reservan importe sin modificar el saldo financiero; confirmados lo cubren y rechazados/anulados liberan su efecto. Una operación nueva revalida versión, pagador, participante, moneda e importes disponibles. Los pagos genéricos anteriores se atribuyen determinísticamente a partes de la misma pareja/moneda; crédito que no pueda atribuirse y cambios posteriores incompatibles exigen conciliación antes de cobrar otra vez. Nunca se eliminan ni reescriben pagos históricos.
 
 **UX y compatibilidad:** no hay botón de actualización, formulario genérico inicial ni vistas separadas por persona/gasto. La confirmación del receptor y la recuperación idempotente permanecen. Las funciones API anteriores conservan su firma para permitir rollback de la aplicación sin revertir el esquema. El Supabase real tenía cero pagos al preparar este cambio; los ensayos de pagos y reservas se ejecutan únicamente en PostgreSQL efímero de CI.
+
+## ADR025 — Recepciones iniciadas por el acreedor
+
+**Requisito:** el participante también puede saldar las partes que otras personas le deben. «Pendiente de cobrar» presenta las mismas tarjetas por persona y gasto que los pagos propios.
+
+**Decisión:** `receive` registra dinero que el receptor declara haber recibido, mediante revisión y confirmación explícita. Solo el receptor real de la sesión o el administrador pueden ejecutarlo; no se amplía la autorización del comando `register`, que sigue reservado al emisor/admin. La recepción nace confirmada y atribuida a partes disponibles, con actor creador/confirmador y auditoría de registro y confirmación. No necesita que el emisor haya creado previamente un pendiente, porque la declaración la realiza quien acepta el cobro.
+
+**Invariantes:** mismo lock, versión revisada, clave idempotente, moneda/configuración e importes exactos. No se puede registrar una nueva recepción sobre importe ya reservado por un pago pendiente: se confirma ese pago existente. Recepciones simultáneas o concurrentes con el registro del emisor no pueden cubrir dos veces la misma parte. La anulación administrativa conserva el historial y libera la atribución correspondiente.
