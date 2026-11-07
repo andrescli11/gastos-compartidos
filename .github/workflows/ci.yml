@@ -24,22 +24,6 @@ jobs:
           path: node_modules/prettier/
           retention-days: 1
           if-no-files-found: error
-      - name: Generate reviewed settlement migration artifact
-        id: settlement_migration
-        if: hashFiles('db/settlements.sql') != '' && hashFiles('supabase/migrations/*expense_payment_allocations.sql') == ''
-        run: |
-          npx --yes supabase@3.0.0 migration --help > /dev/null
-          npx --yes supabase@3.0.0 migration new expense_payment_allocations
-          migration_source="$(rg --files supabase/migrations -g '*expense_payment_allocations.sql')"
-          cp db/settlements.sql "$migration_source"
-      - name: Preserve reviewed settlement migration
-        if: steps.settlement_migration.outcome == 'success'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: settlement-migration
-          path: supabase/migrations/*expense_payment_allocations.sql
-          retention-days: 1
-          if-no-files-found: error
       - run: npm run format:check
         if: always() && steps.dependencies.outcome == 'success'
       - run: npm run lint

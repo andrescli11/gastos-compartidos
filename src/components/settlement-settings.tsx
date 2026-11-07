@@ -108,7 +108,7 @@ export default function SettlementSettings() {
     }
   }, []);
   useEffect(() => {
-    void load();
+    void Promise.resolve().then(() => load());
   }, [load]);
   useEffect(() => {
     if (!review && !saving) return;

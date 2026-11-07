@@ -29,3 +29,5 @@ psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/maintenance.sql"
 psql -X --no-password -v ON_ERROR_STOP=1 -f "$repo_dir/db/tests/settlements.sql"
 node "$repo_dir/scripts/check-db-concurrency.mjs"
 node "$repo_dir/scripts/check-payment-db-concurrency.mjs"
+
+node "$repo_dir/scripts/check-settlement-concurrency.mjs"

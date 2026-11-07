@@ -42,7 +42,7 @@ test("solo el administrador puede abrir la configuración", async ({ page }) => 
     });
   });
   await page.goto("/administrar/liquidacion");
-  await expect(page.getByRole("alert")).toHaveText(
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText(
     "Solo el administrador puede configurar la liquidación.",
   );
   await expect(page.getByLabel("Modo", { exact: true })).toHaveCount(0);
@@ -177,7 +177,9 @@ test("un conflicto de versión exige revisar el libro actualizado", async ({
   await page
     .getByRole("button", { name: "Confirmar configuración", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("Los saldos cambiaron");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Los saldos cambiaron",
+  );
   await expect(
     page.getByRole("button", { name: "Confirmar configuración", exact: true }),
   ).toHaveCount(0);
