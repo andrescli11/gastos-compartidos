@@ -1,6 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import PaymentModal from "./payment-modal";
 import type {
   PaymentCommand,
   PaymentContext,
@@ -90,6 +91,7 @@ function sumPositions(
   );
 }
 export default function PaymentWorkspace() {
+  const modalReturnFocus = useRef<HTMLElement | null>(null);
   const [session, setSession] = useState<Session | null>(null),
     [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [loading, setLoading] = useState(true),
@@ -172,15 +174,15 @@ export default function PaymentWorkspace() {
   const blocked = !!review || saving;
   function prepare(command: PaymentCommand) {
     if (blocked) return;
+    if (!paymentDraft)
+      modalReturnFocus.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
     setError("");
     setMessage("");
     setAck(false);
     setReview({ key: crypto.randomUUID(), command });
-    requestAnimationFrame(() =>
-      document
-        .getElementById("payment-confirmation")
-        ?.scrollIntoView({ block: "center" }),
-    );
   }
   async function submit() {
     if (!session || !review || saving) return;
@@ -341,6 +343,10 @@ export default function PaymentWorkspace() {
       return;
     setError("");
     setMessage("");
+    modalReturnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setPaymentDraft({
       operation: received ? "receive" : "register",
       senderId: received ? first.senderId : currentSender,
@@ -350,11 +356,6 @@ export default function PaymentWorkspace() {
       expenseIds: payable.map((p) => p.expenseId),
       expectedLedgerVersion: context.ledgerVersion,
     });
-    requestAnimationFrame(() =>
-      document
-        .getElementById("settlement-payment-review")
-        ?.scrollIntoView({ block: "center", behavior: "smooth" }),
-    );
   }
   return (
     <main>
@@ -383,7 +384,7 @@ export default function PaymentWorkspace() {
           confirmará que lo recibió.
         </p>
       </header>
-      {error && (
+      {error && !paymentDraft && !review && (
         <p role="alert" className="error">
           {error}
         </p>
@@ -534,51 +535,6 @@ export default function PaymentWorkspace() {
           );
         })}
       </section>
-      {paymentDraft ? (
-        <section
-          className="settlement-payment-draft"
-          id="settlement-payment-review"
-          aria-labelledby="settlement-review-title"
-        >
-          <h2 id="settlement-review-title">
-            {paymentDraft.operation === "receive"
-              ? "Revisa el cobro"
-              : "Revisa tu pago"}
-          </h2>
-          <p>
-            De {name(paymentDraft.senderId)} para{" "}
-            {name(paymentDraft.receiverId)}
-          </p>
-          <strong>
-            {money(paymentDraft.amountMinor, paymentDraft.currency)}
-          </strong>
-          <p>
-            Se aplicará a {paymentDraft.expenseIds?.length ?? 0} gasto(s). El
-            importe y el destinatario corresponden a las deudas seleccionadas.
-          </p>
-          <p>
-            {paymentDraft.operation === "receive"
-              ? "Continúa solo si ya recibiste este dinero. Al confirmar, se saldarán las partes indicadas y quedará registrada tu confirmación de recepción."
-              : "Haz la transferencia por fuera del app. Continúa solo cuando la hayas realizado."}
-          </p>
-          <div className="actions">
-            <button
-              disabled={blocked}
-              onClick={() => {
-                prepare(paymentDraft);
-                setPaymentDraft(null);
-              }}
-            >
-              {paymentDraft.operation === "receive"
-                ? "Ya recibí el pago"
-                : "Ya realicé el pago"}
-            </button>
-            <button disabled={saving} onClick={() => setPaymentDraft(null)}>
-              Cancelar
-            </button>
-          </div>
-        </section>
-      ) : null}
       {incoming.length ? (
         <section
           className="settlement-receivables"
@@ -812,100 +768,165 @@ export default function PaymentWorkspace() {
           </article>
         ))}
       </section>
-      {review && (
-        <section
-          className="confirmation"
-          id="payment-confirmation"
-          aria-label="Revisión de operación"
-        >
-          <h2>
-            {uncertain
-              ? "Operación con resultado incierto"
-              : "Revisa antes de confirmar"}
-          </h2>
-          <p>
-            Operación:{" "}
-            {
-              {
-                register: "registrar pago externo",
-                receive: "registrar dinero recibido",
-                confirm: "confirmar recepción",
-                reject: "rechazar pago",
-                void: "anular pago",
-                configure: "elegir configuración",
-              }[review.command.operation]
-            }
-            .
-          </p>
-          {(review.command.operation === "register" ||
-            review.command.operation === "receive") && (
+      <PaymentModal
+        open={!!paymentDraft || !!review}
+        locked={saving || uncertain}
+        returnFocusRef={modalReturnFocus}
+        step={paymentDraft ? "draft" : uncertain ? "uncertain" : "review"}
+        onCancel={() => {
+          if (saving || uncertain) return;
+          setPaymentDraft(null);
+          setReview(null);
+          setAck(false);
+        }}
+      >
+        {paymentDraft ? (
+          <section
+            className="settlement-payment-draft"
+            id="settlement-payment-review"
+            aria-labelledby="payment-modal-title"
+          >
+            <h2 id="payment-modal-title" tabIndex={-1}>
+              {paymentDraft.operation === "receive"
+                ? "Revisa el cobro"
+                : "Revisa tu pago"}
+            </h2>
             <p>
-              {name(review.command.senderId)} →{" "}
-              {name(review.command.receiverId)}:{" "}
-              {money(review.command.amountMinor, review.command.currency)}
+              De {name(paymentDraft.senderId)} para{" "}
+              {name(paymentDraft.receiverId)}
             </p>
-          )}
-          {reviewPayment && (
+            <strong>
+              {money(paymentDraft.amountMinor, paymentDraft.currency)}
+            </strong>
             <p>
-              {name(reviewPayment.senderId)} → {name(reviewPayment.receiverId)}:{" "}
-              {money(reviewPayment.amountMinor, reviewPayment.currency)}
+              Se aplicará a {paymentDraft.expenseIds?.length ?? 0} gasto(s). El
+              importe y el destinatario corresponden a las deudas seleccionadas.
             </p>
-          )}
-          {review.command.operation === "void" && (
-            <p>Motivo: {review.command.reason}</p>
-          )}
-          {review.command.operation === "configure" ? (
             <p>
-              Completa esta operación en{" "}
-              <Link href="/administrar/liquidacion">
-                Configuración de liquidación
-              </Link>
-              .
+              {paymentDraft.operation === "receive"
+                ? "Continúa solo si ya recibiste este dinero. Al confirmar, se saldarán las partes indicadas y quedará registrada tu confirmación de recepción."
+                : "Haz la transferencia por fuera del app. Continúa solo cuando la hayas realizado."}
             </p>
-          ) : null}
-          <p>
-            Versión revisada del libro: {review.command.expectedLedgerVersion}.
-          </p>
-          {warnings.map((w) => (
-            <p key={w} role="alert">
-              {warningText[w]}
-            </p>
-          ))}
-          {warnings.length > 0 && (
-            <label>
-              <input
-                type="checkbox"
-                checked={ack}
-                onChange={(e) => setAck(e.target.checked)}
-              />
-              He revisado las advertencias y los saldos vigentes.
-            </label>
-          )}
-          <div className="actions">
-            <button
-              disabled={
-                saving ||
-                review.command.operation === "configure" ||
-                (warnings.length > 0 && !ack)
-              }
-              onClick={() => void submit()}
-            >
-              {saving
-                ? "Guardando…"
-                : uncertain
-                  ? "Reintentar la misma operación"
-                  : review.command.operation === "receive"
-                    ? "Confirmar recepción"
-                    : "Confirmar operación"}
-            </button>
-            {!uncertain && (
-              <button disabled={saving} onClick={() => setReview(null)}>
+            <div className="actions">
+              <button
+                disabled={blocked}
+                onClick={() => {
+                  prepare(paymentDraft);
+                  setPaymentDraft(null);
+                }}
+              >
+                {paymentDraft.operation === "receive"
+                  ? "Ya recibí el pago"
+                  : "Ya realicé el pago"}
+              </button>
+              <button disabled={saving} onClick={() => setPaymentDraft(null)}>
                 Cancelar
               </button>
+            </div>
+          </section>
+        ) : null}
+        {review && (
+          <section
+            className="confirmation"
+            id="payment-confirmation"
+            aria-label="Revisión de operación"
+          >
+            <h2 id="payment-modal-title" tabIndex={-1}>
+              {uncertain
+                ? "Operación con resultado incierto"
+                : "Revisa antes de confirmar"}
+            </h2>
+            <p>
+              Operación:{" "}
+              {
+                {
+                  register: "registrar pago externo",
+                  receive: "registrar dinero recibido",
+                  confirm: "confirmar recepción",
+                  reject: "rechazar pago",
+                  void: "anular pago",
+                  configure: "elegir configuración",
+                }[review.command.operation]
+              }
+              .
+            </p>
+            {(review.command.operation === "register" ||
+              review.command.operation === "receive") && (
+              <p>
+                {name(review.command.senderId)} →{" "}
+                {name(review.command.receiverId)}:{" "}
+                {money(review.command.amountMinor, review.command.currency)}
+              </p>
             )}
-          </div>
-        </section>
-      )}
+            {reviewPayment && (
+              <p>
+                {name(reviewPayment.senderId)} →{" "}
+                {name(reviewPayment.receiverId)}:{" "}
+                {money(reviewPayment.amountMinor, reviewPayment.currency)}
+              </p>
+            )}
+            {review.command.operation === "void" && (
+              <p>Motivo: {review.command.reason}</p>
+            )}
+            {review.command.operation === "configure" ? (
+              <p>
+                Completa esta operación en{" "}
+                <Link href="/administrar/liquidacion">
+                  Configuración de liquidación
+                </Link>
+                .
+              </p>
+            ) : null}
+            <p>
+              Versión revisada del libro: {review.command.expectedLedgerVersion}
+              .
+            </p>
+            {warnings.map((w) => (
+              <p key={w} role="alert">
+                {warningText[w]}
+              </p>
+            ))}
+            {warnings.length > 0 && (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={ack}
+                  onChange={(e) => setAck(e.target.checked)}
+                />
+                He revisado las advertencias y los saldos vigentes.
+              </label>
+            )}
+            <div className="actions">
+              <button
+                disabled={
+                  saving ||
+                  review.command.operation === "configure" ||
+                  (warnings.length > 0 && !ack)
+                }
+                onClick={() => void submit()}
+              >
+                {saving
+                  ? "Guardando…"
+                  : uncertain
+                    ? "Reintentar la misma operación"
+                    : review.command.operation === "receive"
+                      ? "Confirmar recepción"
+                      : "Confirmar operación"}
+              </button>
+              {!uncertain && (
+                <button disabled={saving} onClick={() => setReview(null)}>
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+        {error && (paymentDraft || review) ? (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        ) : null}
+      </PaymentModal>
     </main>
   );
 }
