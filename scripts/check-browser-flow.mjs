@@ -455,6 +455,82 @@ sys.stdout.buffer.write(out.getvalue())
       1,
     );
 
+    stage = "receiver initiated receipt review";
+    await aBrowser.page.goto(`${base}/pagos`);
+    const beforeReceipt = await browserJson(aBrowser.page, "/api/payments");
+    const receiptPosition = beforeReceipt.context.positions.find(
+      (position) =>
+        position.senderId === b.id &&
+        position.receiverId === a.id &&
+        position.description === importedDescription,
+    );
+    assert(receiptPosition);
+    const receiptAvailable =
+      BigInt(receiptPosition.remainingMinor) -
+      BigInt(receiptPosition.pendingMinor);
+    assert(receiptAvailable > 0n);
+    const debtorCard = aBrowser.page.getByRole("article", {
+      name: `Cobros de ${b.name}`,
+      exact: true,
+    });
+    await debtorCard
+      .getByLabel(`Ver gastos que debe ${b.name}`, { exact: true })
+      .click();
+    const receiptExpense = debtorCard
+      .locator("article")
+      .filter({
+        has: aBrowser.page.getByRole("heading", {
+          name: importedDescription,
+          exact: true,
+        }),
+      })
+      .last();
+    await receiptExpense
+      .getByRole("button", { name: "Marcar gasto recibido", exact: true })
+      .click();
+    assert.equal(
+      (await browserJson(aBrowser.page, "/api/payments")).context.payments
+        .length,
+      beforeReceipt.context.payments.length,
+    );
+    await aBrowser.page
+      .getByRole("button", { name: "Ya recibí el pago", exact: true })
+      .click();
+    assert.equal(
+      (await browserJson(aBrowser.page, "/api/payments")).context.payments
+        .length,
+      beforeReceipt.context.payments.length,
+    );
+    stage = "receiver initiated receipt confirmation";
+    await command(aBrowser.page, "/api/payments", () =>
+      aBrowser.page
+        .getByRole("button", { name: "Confirmar recepción", exact: true })
+        .click(),
+    );
+    const afterReceipt = await browserJson(aBrowser.page, "/api/payments");
+    const receiptPayment = afterReceipt.context.payments.find(
+      (payment) =>
+        !beforeReceipt.context.payments.some((old) => old.id === payment.id),
+    );
+    assert(receiptPayment);
+    assert.equal(receiptPayment.state, "confirmed");
+    assert.equal(receiptPayment.senderId, b.id);
+    assert.equal(receiptPayment.receiverId, a.id);
+    assert.equal(receiptPayment.amountMinor, receiptAvailable.toString());
+    assert.deepEqual(receiptPayment.expenseAllocations, [
+      {
+        expenseId: receiptPosition.expenseId,
+        amountMinor: receiptAvailable.toString(),
+      },
+    ]);
+    const updatedPosition = afterReceipt.context.positions.find(
+      (position) =>
+        position.expenseId === receiptPosition.expenseId &&
+        position.senderId === b.id,
+    );
+    assert(updatedPosition);
+    assert.equal(updatedPosition.remainingMinor, "0");
+
     for (const opened of [adminBrowser, aBrowser, bBrowser])
       await opened.context.close();
   }

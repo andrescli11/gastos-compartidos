@@ -97,7 +97,7 @@ export default function PaymentWorkspace() {
   const [sender, setSender] = useState("");
   const [paymentDraft, setPaymentDraft] = useState<Extract<
     PaymentCommand,
-    { operation: "register" }
+    { operation: "register" | "receive" }
   > | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [review, setReview] = useState<PendingOperation<PaymentCommand> | null>(
@@ -219,9 +219,11 @@ export default function PaymentWorkspace() {
       setMessage(
         review.command.operation === "register"
           ? "Pago registrado. Esperando confirmación del receptor."
-          : review.command.operation === "confirm"
-            ? "Recepción confirmada. Los saldos se actualizaron."
-            : "Operación registrada.",
+          : review.command.operation === "receive"
+            ? "Recepción registrada. Los saldos se actualizaron."
+            : review.command.operation === "confirm"
+              ? "Recepción confirmada. Los saldos se actualizaron."
+              : "Operación registrada.",
       );
       const fresh = await api<Snapshot>("/api/payments");
       setSnapshot(fresh);
@@ -316,7 +318,7 @@ export default function PaymentWorkspace() {
   const incoming = positions.filter(
     (p) => p.receiverId === currentSender && BigInt(p.remainingMinor) > 0n,
   );
-  function choosePayment(selected: Position[]) {
+  function choosePayment(selected: Position[], received = false) {
     if (!canChoose || !selected.length) return;
     const first = selected[0];
     const payable = selected.filter((p) => available(p) > 0n);
@@ -331,8 +333,8 @@ export default function PaymentWorkspace() {
       total <= 0n ||
       payable.some(
         (p) =>
-          p.senderId !== currentSender ||
-          p.receiverId !== first.receiverId ||
+          p.senderId !== (received ? first.senderId : currentSender) ||
+          p.receiverId !== (received ? currentSender : first.receiverId) ||
           p.currency !== first.currency,
       )
     )
@@ -340,9 +342,9 @@ export default function PaymentWorkspace() {
     setError("");
     setMessage("");
     setPaymentDraft({
-      operation: "register",
-      senderId: currentSender,
-      receiverId: first.receiverId,
+      operation: received ? "receive" : "register",
+      senderId: received ? first.senderId : currentSender,
+      receiverId: received ? currentSender : first.receiverId,
       currency: first.currency,
       amountMinor: total.toString(),
       expenseIds: payable.map((p) => p.expenseId),
@@ -538,7 +540,11 @@ export default function PaymentWorkspace() {
           id="settlement-payment-review"
           aria-labelledby="settlement-review-title"
         >
-          <h2 id="settlement-review-title">Revisa tu pago</h2>
+          <h2 id="settlement-review-title">
+            {paymentDraft.operation === "receive"
+              ? "Revisa el cobro"
+              : "Revisa tu pago"}
+          </h2>
           <p>
             De {name(paymentDraft.senderId)} para{" "}
             {name(paymentDraft.receiverId)}
@@ -551,8 +557,9 @@ export default function PaymentWorkspace() {
             importe y el destinatario corresponden a las deudas seleccionadas.
           </p>
           <p>
-            Haz la transferencia por fuera del app. Continúa solo cuando la
-            hayas realizado.
+            {paymentDraft.operation === "receive"
+              ? "Continúa solo si ya recibiste este dinero. Al confirmar, se saldarán las partes indicadas y quedará registrada tu confirmación de recepción."
+              : "Haz la transferencia por fuera del app. Continúa solo cuando la hayas realizado."}
           </p>
           <div className="actions">
             <button
@@ -562,7 +569,9 @@ export default function PaymentWorkspace() {
                 setPaymentDraft(null);
               }}
             >
-              Ya realicé el pago
+              {paymentDraft.operation === "receive"
+                ? "Ya recibí el pago"
+                : "Ya realicé el pago"}
             </button>
             <button disabled={saving} onClick={() => setPaymentDraft(null)}>
               Cancelar
@@ -571,32 +580,151 @@ export default function PaymentWorkspace() {
         </section>
       ) : null}
       {incoming.length ? (
-        <section className="settlement-receivables">
-          <h2>Pendiente de cobrar</h2>
+        <section
+          className="settlement-receivables"
+          aria-labelledby="settlement-receivables-title"
+        >
+          <h2 id="settlement-receivables-title">Pendiente de cobrar</h2>
+          <p className="hint">
+            Registra solo dinero que ya recibiste. Si el deudor registró un
+            pago, confirma su recepción en ese mismo pago.
+          </p>
           {session.participants
-            .filter((p) =>
-              incoming.some((position) => position.senderId === p.id),
+            .filter((person) =>
+              incoming.some((position) => position.senderId === person.id),
             )
-            .map((p) => (
-              <p key={p.id}>
-                {p.displayName}:{" "}
-                {(["PEN", "USD"] as const)
-                  .flatMap((currency) => {
-                    const value = sumPositions(
-                      incoming.filter(
-                        (position) =>
-                          position.senderId === p.id &&
-                          position.currency === currency,
-                      ),
-                      "remainingMinor",
-                    );
-                    return value > 0n
-                      ? [money(value.toString(), currency)]
-                      : [];
-                  })
-                  .join(" · ")}
-              </p>
-            ))}
+            .map((person) => {
+              const debts = incoming.filter(
+                (position) => position.senderId === person.id,
+              );
+              const pendingPayments = context.payments.filter(
+                (payment) =>
+                  payment.senderId === person.id &&
+                  payment.receiverId === currentSender &&
+                  payment.state === "pending",
+              );
+              return (
+                <article
+                  className="settlement-person-card"
+                  key={person.id}
+                  aria-label={`Cobros de ${person.displayName}`}
+                >
+                  <p className="eyebrow">TE DEBE</p>
+                  <h3>{person.displayName}</h3>
+                  <div className="settlement-person-totals">
+                    {(["PEN", "USD"] as const).map((currency) => {
+                      const shares = debts.filter(
+                        (position) => position.currency === currency,
+                      );
+                      if (!shares.length) return null;
+                      const reserved = sumPositions(shares, "pendingMinor");
+                      const free = sumPositions(shares, "available");
+                      return (
+                        <div key={currency}>
+                          <strong>
+                            {money(
+                              sumPositions(shares, "remainingMinor").toString(),
+                              currency,
+                            )}
+                          </strong>
+                          {reserved > 0n ? (
+                            <p>
+                              Pago pendiente de recepción:{" "}
+                              {money(reserved.toString(), currency)}
+                            </p>
+                          ) : null}
+                          {reserved > 0n && free > 0n ? (
+                            <p>
+                              Disponible para registrar como recibido:{" "}
+                              {money(free.toString(), currency)}
+                            </p>
+                          ) : null}
+                          <button
+                            disabled={!canChoose || free === 0n}
+                            onClick={() => choosePayment(shares, true)}
+                          >
+                            Marcar total recibido {currency}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {pendingPayments.length ? (
+                    <div className="settlement-pending-receipts">
+                      <h4>Pagos por confirmar</h4>
+                      {pendingPayments.map((payment) => (
+                        <div key={payment.id}>
+                          <span>
+                            {money(payment.amountMinor, payment.currency)}
+                          </span>
+                          <button
+                            disabled={
+                              blocked ||
+                              !!paymentDraft ||
+                              !summary.configurationChosen
+                            }
+                            onClick={() =>
+                              prepare({
+                                operation: "confirm",
+                                id: payment.id,
+                                expectedPaymentVersion: payment.version,
+                                expectedLedgerVersion: context.ledgerVersion,
+                                reviewedLedgerVersion: context.ledgerVersion,
+                              })
+                            }
+                          >
+                            Confirmar recepción pendiente
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <details className="settlement-expense-details">
+                    <summary
+                      aria-label={`Ver gastos que debe ${person.displayName}`}
+                    >
+                      Ver gastos que debe {person.displayName}
+                    </summary>
+                    {debts.map((position) => (
+                      <article
+                        className="settlement-expense"
+                        key={position.expenseId}
+                      >
+                        <div>
+                          <h4>{position.description}</h4>
+                          <p>
+                            {position.spentOn} · Pendiente:{" "}
+                            {money(position.remainingMinor, position.currency)}
+                          </p>
+                          {BigInt(position.pendingMinor) > 0n ? (
+                            <p>
+                              Pago pendiente de recepción:{" "}
+                              {money(position.pendingMinor, position.currency)}
+                            </p>
+                          ) : null}
+                          {BigInt(position.pendingMinor) > 0n &&
+                          available(position) > 0n ? (
+                            <p>
+                              Disponible para registrar:{" "}
+                              {money(
+                                available(position).toString(),
+                                position.currency,
+                              )}
+                            </p>
+                          ) : null}
+                        </div>
+                        <button
+                          disabled={!canChoose || available(position) === 0n}
+                          onClick={() => choosePayment([position], true)}
+                        >
+                          Marcar gasto recibido
+                        </button>
+                      </article>
+                    ))}
+                  </details>
+                </article>
+              );
+            })}
         </section>
       ) : null}
       <section>
@@ -700,6 +828,7 @@ export default function PaymentWorkspace() {
             {
               {
                 register: "registrar pago externo",
+                receive: "registrar dinero recibido",
                 confirm: "confirmar recepción",
                 reject: "rechazar pago",
                 void: "anular pago",
@@ -708,7 +837,8 @@ export default function PaymentWorkspace() {
             }
             .
           </p>
-          {review.command.operation === "register" && (
+          {(review.command.operation === "register" ||
+            review.command.operation === "receive") && (
             <p>
               {name(review.command.senderId)} →{" "}
               {name(review.command.receiverId)}:{" "}
@@ -764,7 +894,9 @@ export default function PaymentWorkspace() {
                 ? "Guardando…"
                 : uncertain
                   ? "Reintentar la misma operación"
-                  : "Confirmar operación"}
+                  : review.command.operation === "receive"
+                    ? "Confirmar recepción"
+                    : "Confirmar operación"}
             </button>
             {!uncertain && (
               <button disabled={saving} onClick={() => setReview(null)}>

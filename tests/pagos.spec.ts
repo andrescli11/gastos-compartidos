@@ -470,3 +470,258 @@ test("sin deudas muestra un cierre personal y el administrador puede elegir a qu
     page.getByRole("button", { name: "Revisar configuración", exact: true }),
   ).toHaveCount(0);
 });
+
+const receivedPayment = {
+  id: "received-payment",
+  senderId: "a",
+  receiverId: "b",
+  amountMinor: "250",
+  currency: "PEN",
+  state: "confirmed",
+  version: 1,
+  createdBy: "receiver-actor",
+  confirmedBy: "receiver-actor",
+  rejectedBy: null,
+  voidedBy: null,
+  voidReason: null,
+  expenseAllocations: [{ expenseId: "expense-1", amountMinor: "250" }],
+};
+
+test("el receptor puede marcar un gasto recibido solo tras revisar y confirmar el cobro", async ({
+  page,
+}) => {
+  await page.route("**/api/session", (r) =>
+    r.fulfill({ json: { ...session, participantId: "b" } }),
+  );
+  const commands: Record<string, unknown>[] = [];
+  let received = false;
+  await page.route("**/api/payments", (r) => {
+    if (r.request().method() === "POST") {
+      commands.push(r.request().postDataJSON());
+      received = true;
+      return r.fulfill({ json: {} });
+    }
+    return r.fulfill({
+      json: {
+        ...snapshot,
+        context: {
+          ...snapshot.context,
+          actor: { ...snapshot.context.actor, participantId: "b" },
+          ledgerVersion: commands.length + 1,
+          positions: snapshot.context.positions.map((p) =>
+            commands.some(
+              (command) =>
+                Array.isArray(command.expenseIds) &&
+                command.expenseIds.includes(p.expenseId),
+            )
+              ? { ...p, confirmedMinor: p.amountMinor, remainingMinor: "0" }
+              : p,
+          ),
+          payments: received ? [receivedPayment] : [],
+        },
+      },
+    });
+  });
+  await page.goto("/pagos");
+  const debtor = page.getByRole("article", {
+    name: "Cobros de Ana",
+    exact: true,
+  });
+  await expect(
+    debtor.getByRole("heading", { name: "Ana", exact: true }),
+  ).toBeVisible();
+  await debtor.getByLabel("Ver gastos que debe Ana", { exact: true }).click();
+  const dinner = debtor
+    .locator("article")
+    .filter({ has: page.getByRole("heading", { name: "Cena", exact: true }) })
+    .last();
+  await dinner
+    .getByRole("button", { name: "Marcar gasto recibido", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Revisa el cobro", exact: true }),
+  ).toBeVisible();
+  expect(commands).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Ya recibí el pago", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Revisa antes de confirmar",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(commands).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Confirmar recepción", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Recepción registrada. Los saldos se actualizaron." }),
+  ).toBeVisible();
+  expect(commands[0]).toEqual({
+    operation: "receive",
+    senderId: "a",
+    receiverId: "b",
+    amountMinor: "250",
+    currency: "PEN",
+    expenseIds: ["expense-1"],
+    expectedLedgerVersion: 1,
+  });
+  await expect(
+    debtor.getByRole("heading", { name: "Cena", exact: true }),
+  ).toHaveCount(0);
+  await debtor
+    .getByRole("button", { name: "Marcar total recibido PEN", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Ya recibí el pago", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Confirmar recepción", exact: true })
+    .click();
+  expect(commands[1]).toMatchObject({
+    operation: "receive",
+    amountMinor: "750",
+    expenseIds: ["expense-2"],
+    expectedLedgerVersion: 2,
+  });
+  await expect(debtor).toHaveCount(0);
+});
+
+test("un cobro totalmente reservado confirma el pendiente existente y no crea otro pago", async ({
+  page,
+}) => {
+  await page.route("**/api/session", (r) =>
+    r.fulfill({ json: { ...session, participantId: "b" } }),
+  );
+  const commands: Record<string, unknown>[] = [];
+  const pending = {
+    ...receivedPayment,
+    amountMinor: "1000",
+    state: "pending",
+    createdBy: "sender-actor",
+    confirmedBy: null,
+    expenseAllocations: [
+      { expenseId: "expense-1", amountMinor: "250" },
+      { expenseId: "expense-2", amountMinor: "750" },
+    ],
+  };
+  await page.route("**/api/payments", (r) => {
+    if (r.request().method() === "POST") {
+      commands.push(r.request().postDataJSON());
+      return r.fulfill({ json: {} });
+    }
+    return r.fulfill({
+      json: {
+        ...snapshot,
+        context: {
+          ...snapshot.context,
+          positions: snapshot.context.positions.map((p) => ({
+            ...p,
+            pendingMinor: p.remainingMinor,
+          })),
+          payments: [pending],
+        },
+      },
+    });
+  });
+  await page.goto("/pagos");
+  const debtor = page.getByRole("article", {
+    name: "Cobros de Ana",
+    exact: true,
+  });
+  await expect(
+    debtor.getByRole("button", {
+      name: "Marcar total recibido PEN",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await debtor.getByLabel("Ver gastos que debe Ana", { exact: true }).click();
+  for (const button of await debtor
+    .getByRole("button", { name: "Marcar gasto recibido", exact: true })
+    .all())
+    await expect(button).toBeDisabled();
+  await debtor
+    .getByRole("button", { name: "Confirmar recepción pendiente", exact: true })
+    .click();
+  expect(commands).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Confirmar operación", exact: true })
+    .click();
+  expect(commands).toEqual([
+    {
+      operation: "confirm",
+      id: "received-payment",
+      expectedPaymentVersion: 1,
+      expectedLedgerVersion: 1,
+      reviewedLedgerVersion: 1,
+    },
+  ]);
+});
+
+test("marcar total recibido excluye importes reservados por otro pago pendiente", async ({
+  page,
+}) => {
+  await page.route("**/api/session", (r) =>
+    r.fulfill({ json: { ...session, participantId: "b" } }),
+  );
+  const commands: Record<string, unknown>[] = [];
+  await page.route("**/api/payments", (r) => {
+    if (r.request().method() === "POST") {
+      commands.push(r.request().postDataJSON());
+      return r.fulfill({ json: {} });
+    }
+    return r.fulfill({
+      json: {
+        ...snapshot,
+        context: {
+          ...snapshot.context,
+          positions: snapshot.context.positions.map((p, i) => ({
+            ...p,
+            pendingMinor: i === 0 ? "100" : "0",
+          })),
+          payments: [
+            {
+              ...receivedPayment,
+              amountMinor: "100",
+              state: "pending",
+              confirmedBy: null,
+              expenseAllocations: [
+                { expenseId: "expense-1", amountMinor: "100" },
+              ],
+            },
+          ],
+        },
+      },
+    });
+  });
+  await page.goto("/pagos");
+  const debtor = page.getByRole("article", {
+    name: "Cobros de Ana",
+    exact: true,
+  });
+  await expect(
+    debtor.getByText("Disponible", { exact: false }).first(),
+  ).toBeVisible();
+  await debtor
+    .getByRole("button", { name: "Marcar total recibido PEN", exact: true })
+    .click();
+  expect(commands).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Ya recibí el pago", exact: true })
+    .click();
+  expect(commands).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Confirmar recepción", exact: true })
+    .click();
+  expect(commands[0]).toMatchObject({
+    operation: "receive",
+    senderId: "a",
+    receiverId: "b",
+    amountMinor: "900",
+    currency: "PEN",
+    expenseIds: ["expense-1", "expense-2"],
+  });
+});

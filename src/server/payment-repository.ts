@@ -66,6 +66,15 @@ export type PaymentCommand =
       expenseIds?: string[];
     }
   | {
+      operation: "receive";
+      senderId: string;
+      receiverId: string;
+      amountMinor: string;
+      currency: "PEN" | "USD";
+      expenseIds: string[];
+      expectedLedgerVersion: number;
+    }
+  | {
       operation: "confirm";
       id: string;
       expectedPaymentVersion: number;
@@ -114,7 +123,7 @@ export function validatePaymentCommand(
 ): asserts v is PaymentCommand {
   if (!object(v) || !integer(v.expectedLedgerVersion)) invalid();
   let allowed: string[];
-  if (v.operation === "register") {
+  if (v.operation === "register" || v.operation === "receive") {
     allowed = [
       "operation",
       "senderId",
@@ -123,6 +132,7 @@ export function validatePaymentCommand(
       "currency",
       "expectedLedgerVersion",
     ];
+    if (v.operation === "receive" && v.expenseIds === undefined) invalid();
     if (v.expenseIds !== undefined) {
       allowed.push("expenseIds");
       if (
