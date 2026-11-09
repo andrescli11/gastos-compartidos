@@ -24,14 +24,6 @@ jobs:
           path: node_modules/prettier/
           retention-days: 1
           if-no-files-found: error
-      - name: Generate receipt migration with Supabase CLI
-        if: hashFiles('db/receipts.sql') != '' && hashFiles('supabase/migrations/*received_expense_payments.sql') == ''
-        run: |
-          npx --yes supabase@3.0.0 migration --help > /dev/null
-          npx --yes supabase@3.0.0 migration new received_expense_payments
-          for migration_source in supabase/migrations/*received_expense_payments.sql; do
-            cp db/receipts.sql "$migration_source"
-          done
       - run: npm run format:check
         if: always() && steps.dependencies.outcome == 'success'
       - run: npm run lint
