@@ -24,6 +24,7 @@ type Context = SessionContext & { csrfToken: string };
 type SummaryResponse = {
   summary: Record<Currency, CurrencySummary>;
   settlementMode?: "separate" | "consolidated";
+  originalExpenseTotals?: Record<Currency, string>;
 };
 class ApiError extends Error {
   status: number;
@@ -65,6 +66,10 @@ export default function ExpenseWorkspace({
   const [summary, setSummary] = useState<Record<
     Currency,
     CurrencySummary
+  > | null>(null);
+  const [originalTotals, setOriginalTotals] = useState<Record<
+    Currency,
+    string
   > | null>(null);
   const [loading, setLoading] = useState(true),
     [message, setMessage] = useState(""),
@@ -159,6 +164,7 @@ export default function ExpenseWorkspace({
         return api<SummaryResponse>("/api/summary").then((data) => {
           if (!abortRef.current) {
             setSummary(data.summary);
+            setOriginalTotals(data.originalExpenseTotals ?? null);
           }
         });
       })
@@ -306,6 +312,7 @@ export default function ExpenseWorkspace({
       try {
         const data = await api<SummaryResponse>("/api/summary");
         setSummary(data.summary);
+        setOriginalTotals(data.originalExpenseTotals ?? null);
       } catch (error) {
         invalidate(error);
       }
@@ -549,30 +556,33 @@ export default function ExpenseWorkspace({
       <p role="status" className={message ? "notice" : "home-feedback"}>
         {message}
       </p>
-      {summary && !entry ? (
+      {summary && !entry && context.participantId ? (
         <section
           className="summary-grid home-kpis"
           aria-label="Resumen por moneda"
         >
-          {(["PEN", "USD"] as const).map((c) => (
-            <div className="summary-card" key={c}>
-              <p className="eyebrow">TOTAL {c}</p>
-              <strong>{formatMoney(BigInt(summary[c].totalMinor), c)}</strong>
-              {context.participantId ? (
-                <p>
-                  Tu saldo:{" "}
-                  {formatMoney(
-                    BigInt(
-                      summary[c].balances.find(
-                        (b) => b.participantId === context.participantId,
-                      )?.amountMinor ?? "0",
-                    ),
-                    c,
-                  )}
+          {(["PEN", "USD"] as const).map((currency) => {
+            const balance = BigInt(
+              summary[currency].balances.find(
+                (part) => part.participantId === context.participantId,
+              )?.amountMinor ?? "0",
+            );
+            return (
+              <div className="summary-card" key={currency}>
+                <p className="eyebrow">
+                  {currency} ·{" "}
+                  {balance > 0n
+                    ? "Te deben"
+                    : balance < 0n
+                      ? "Debes"
+                      : "Sin saldo pendiente"}
                 </p>
-              ) : null}
-            </div>
-          ))}
+                <strong>
+                  {formatMoney(balance < 0n ? -balance : balance, currency)}
+                </strong>
+              </div>
+            );
+          })}
         </section>
       ) : null}
       {showForm ? (
@@ -897,6 +907,27 @@ export default function ExpenseWorkspace({
           </>
         )}
       </section>
+      {summary && !entry ? (
+        <section className="home-trip-totals" aria-label="Totales del viaje">
+          <h2>Total de gastos del viaje</h2>
+          <div>
+            {(["PEN", "USD"] as const).map((currency) => (
+              <p key={currency}>
+                <span>{currency}</span>
+                <strong>
+                  {formatMoney(
+                    BigInt(
+                      originalTotals?.[currency] ??
+                        summary[currency].totalMinor,
+                    ),
+                    currency,
+                  )}
+                </strong>
+              </p>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <footer>CUSCO · CUENTAS CLARAS</footer>
     </main>
   );

@@ -101,15 +101,24 @@ test("el encabezado reúne identidad y acciones accesibles según el rol", async
     const cards = page
       .getByRole("region", { name: "Resumen por moneda", exact: true })
       .locator(".summary-card");
-    await expect(cards).toHaveCount(2);
-    if (isMobile) {
-      const first = await cards.nth(0).boundingBox();
-      const second = await cards.nth(1).boundingBox();
-      expect(first).not.toBeNull();
-      expect(second).not.toBeNull();
-      expect(Math.abs(first!.y - second!.y)).toBeLessThan(2);
-      expect(second!.x).toBeGreaterThan(first!.x);
+    if (role === "admin") {
+      await expect(
+        page.getByRole("region", { name: "Resumen por moneda", exact: true }),
+      ).toHaveCount(0);
+    } else {
+      await expect(cards).toHaveCount(2);
+      if (isMobile) {
+        const first = await cards.nth(0).boundingBox();
+        const second = await cards.nth(1).boundingBox();
+        expect(first).not.toBeNull();
+        expect(second).not.toBeNull();
+        expect(Math.abs(first!.y - second!.y)).toBeLessThan(2);
+        expect(second!.x).toBeGreaterThan(first!.x);
+      }
     }
+    await expect(
+      page.getByRole("region", { name: "Totales del viaje", exact: true }),
+    ).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -508,4 +517,122 @@ test("tabla en escritorio y tarjetas en móvil conservan reparto y acciones", as
     .getByRole("button", { name: "Cancelar edición", exact: true })
     .click();
   await expect(page.getByLabel("Descripción", { exact: true })).toHaveCount(0);
+});
+
+test("los KPI personales distinguen cobros y deudas sin signos negativos y muestran cero explícito", async ({
+  page,
+}) => {
+  await mockSession(page);
+  let personal = { PEN: "1234", USD: "-5678" };
+  await page.route("**/api/expenses", (route) =>
+    route.fulfill({ json: { expenses: [expense] } }),
+  );
+  await page.route("**/api/summary", (route) =>
+    route.fulfill({
+      json: {
+        summary: {
+          PEN: {
+            totalMinor: "99999",
+            balances: [
+              { participantId: a, amountMinor: personal.PEN },
+              {
+                participantId: b,
+                amountMinor: (-BigInt(personal.PEN)).toString(),
+              },
+            ],
+            transfers: [],
+            minimumProven: true,
+          },
+          USD: {
+            totalMinor: "88888",
+            balances: [
+              { participantId: a, amountMinor: personal.USD },
+              {
+                participantId: b,
+                amountMinor: (-BigInt(personal.USD)).toString(),
+              },
+            ],
+            transfers: [],
+            minimumProven: true,
+          },
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  const cards = page
+    .getByRole("region", { name: "Resumen por moneda", exact: true })
+    .locator(".summary-card");
+  await expect(cards.nth(0)).toContainText("Te deben");
+  await expect(cards.nth(0).locator("strong")).toHaveText("S/ 12.34");
+  await expect(cards.nth(1)).toContainText("Debes");
+  await expect(cards.nth(1).locator("strong")).toHaveText("US$ 56.78");
+  await expect(cards.nth(1)).not.toContainText("-US$");
+  personal = { PEN: "0", USD: "0" };
+  await page.reload();
+  await expect(cards).toHaveCount(2);
+  for (const card of await cards.all())
+    await expect(card).toContainText("Sin saldo pendiente");
+  await expect(cards.nth(0).locator("strong")).toHaveText("S/ 0.00");
+  await expect(cards.nth(1).locator("strong")).toHaveText("US$ 0.00");
+});
+
+test("los totales del viaje quedan debajo de movimientos y no cambian al filtrar", async ({
+  page,
+}) => {
+  await mockSession(page);
+  await page.route("**/api/expenses", (route) =>
+    route.fulfill({ json: { expenses: [expense] } }),
+  );
+  await page.route("**/api/summary", (route) =>
+    route.fulfill({
+      json: {
+        settlementMode: "consolidated",
+        originalExpenseTotals: { PEN: "27000", USD: "66100" },
+        summary: {
+          PEN: {
+            totalMinor: "999999",
+            balances: [
+              { participantId: a, amountMinor: "17000" },
+              { participantId: b, amountMinor: "-17000" },
+            ],
+            transfers: [],
+            minimumProven: true,
+          },
+          USD: {
+            totalMinor: "0",
+            balances: [],
+            transfers: [],
+            minimumProven: true,
+          },
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  const movements = page.getByRole("region", {
+    name: "Gastos registrados",
+    exact: true,
+  });
+  const totals = page.getByRole("region", {
+    name: "Totales del viaje",
+    exact: true,
+  });
+  await expect(totals).toContainText("S/ 270.00");
+  await expect(totals).toContainText("US$ 661.00");
+  const movementBox = await movements.boundingBox();
+  const totalBox = await totals.boundingBox();
+  expect(movementBox).not.toBeNull();
+  expect(totalBox).not.toBeNull();
+  expect(totalBox!.y).toBeGreaterThanOrEqual(
+    movementBox!.y + movementBox!.height,
+  );
+  await expect(page.getByLabel("Buscar", { exact: true })).not.toBeVisible();
+  await page.getByLabel("Buscar y filtrar", { exact: true }).click();
+  await page.getByLabel("Buscar", { exact: true }).fill("sin coincidencia");
+  await expect(
+    page.getByText("No hay gastos con estos filtros.", { exact: true }),
+  ).toBeVisible();
+  await expect(totals).toContainText("S/ 270.00");
+  await expect(totals).toContainText("US$ 661.00");
 });
