@@ -82,23 +82,34 @@ async function prepareTotal(page: Page) {
     .getByRole("button", { name: "Saldar total PEN", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Revisa tu pago", exact: true }),
+    page.getByRole("dialog", { name: "Revisa tu pago", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Ya realicé el pago", exact: true })
     .click();
+  await expect(
+    page.getByRole("dialog", {
+      name: "Revisa antes de confirmar",
+      exact: true,
+    }),
+  ).toBeVisible();
 }
 test("requires review and retries an uncertain payment with the same key", async ({
   page,
 }) => {
   await page.route("**/api/session", (r) => r.fulfill({ json: session }));
   const requests: { key: string | undefined; body: unknown }[] = [];
+  let releaseFirstResponse: () => void = () => {};
+  const firstResponse = new Promise<void>((resolve) => {
+    releaseFirstResponse = resolve;
+  });
   await page.route("**/api/payments", async (r) => {
     if (r.request().method() === "GET") return r.fulfill({ json: snapshot });
     requests.push({
       key: r.request().headers()["idempotency-key"],
       body: r.request().postDataJSON(),
     });
+    if (requests.length === 1) await firstResponse;
     return r.fulfill(
       requests.length === 1
         ? { status: 503, json: { error: "Temporal" } }
@@ -111,9 +122,24 @@ test("requires review and retries an uncertain payment with the same key", async
   await page
     .getByRole("button", { name: "Confirmar operación", exact: true })
     .click();
+  const modal = page.getByRole("dialog");
   await expect(
-    page.getByRole("button", { name: "Reintentar la misma operación" }),
+    modal.getByRole("button", { name: "Cerrar", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(modal).toBeVisible();
+  releaseFirstResponse();
+  await expect(
+    modal.getByRole("button", { name: "Reintentar la misma operación" }),
   ).toBeVisible();
+  await expect(
+    modal.getByRole("button", { name: "Cerrar", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole("alert")).toContainText(
+    "El resultado es incierto",
+  );
   page.once("dialog", (dialog) => dialog.accept());
   await page.reload();
   await page
@@ -295,7 +321,11 @@ test("a generic conflict cannot abandon an uncertain payment", async ({
     page.getByRole("button", { name: "Reintentar la misma operación" }),
   ).toBeEnabled();
   await expect(
-    page.getByRole("button", { name: "Saldar total PEN", exact: true }),
+    page.getByRole("button", {
+      name: "Saldar total PEN",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toBeDisabled();
   expect(
     await page.evaluate(() =>
@@ -427,7 +457,11 @@ test("un importe reservado no se puede pagar por segunda vez", async ({
   );
   await page.goto("/pagos");
   await expect(
-    page.getByRole("button", { name: "Saldar total PEN", exact: true }),
+    page.getByRole("button", {
+      name: "Saldar total PEN",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toBeDisabled();
   await page.getByText("Ver gastos con Bruno", { exact: true }).click();
   const buttons = page.getByRole("button", {
@@ -724,4 +758,72 @@ test("marcar total recibido excluye importes reservados por otro pago pendiente"
     currency: "PEN",
     expenseIds: ["expense-1", "expense-2"],
   });
+});
+
+test("el cobro abre un diálogo cancelable que devuelve el foco sin registrar pagos", async ({
+  page,
+}) => {
+  await page.route("**/api/session", (r) =>
+    r.fulfill({ json: { ...session, participantId: "b" } }),
+  );
+  let posts = 0;
+  await page.route("**/api/payments", (r) => {
+    if (r.request().method() === "POST") posts++;
+    return r.fulfill({ json: snapshot });
+  });
+  await page.goto("/pagos");
+  const debtor = page.getByRole("article", {
+    name: "Cobros de Ana",
+    exact: true,
+  });
+  const trigger = debtor.getByRole("button", {
+    name: "Marcar total recibido PEN",
+    exact: true,
+  });
+  await trigger.click();
+  let modal = page.getByRole("dialog", {
+    name: "Revisa el cobro",
+    exact: true,
+  });
+  await expect(modal).toBeVisible();
+  await expect(
+    modal.getByRole("button", { name: "Ya recibí el pago", exact: true }),
+  ).toBeVisible();
+  expect(posts).toBe(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  modal = page.getByRole("dialog", { name: "Revisa el cobro", exact: true });
+  await modal.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  modal = page.getByRole("dialog", { name: "Revisa el cobro", exact: true });
+  await modal.getByRole("button", { name: "Cerrar", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await page
+    .getByRole("dialog", { name: "Revisa el cobro", exact: true })
+    .getByRole("button", { name: "Ya recibí el pago", exact: true })
+    .click();
+  const finalReview = page.getByRole("dialog", {
+    name: "Revisa antes de confirmar",
+    exact: true,
+  });
+  await expect(finalReview).toBeVisible();
+  await expect(
+    finalReview.getByRole("button", {
+      name: "Confirmar recepción",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(posts).toBe(0);
+  await finalReview
+    .getByRole("button", { name: "Cancelar", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(posts).toBe(0);
 });
