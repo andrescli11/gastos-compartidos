@@ -302,7 +302,7 @@ try {
     stage = "expense review";
     const initialReview = await command(aBrowser.page, "/api/imports", () =>
       aBrowser.page
-        .getByRole("button", { name: "Revisar gastos", exact: true })
+        .getByRole("button", { name: "Agregar", exact: true })
         .click(),
     );
     if (initialReview.job.rows.some((row) => row.selected && !row.reviewed)) {
@@ -326,7 +326,7 @@ try {
         .getByLabel("He revisado gasto 1", { exact: true })
         .check();
       const canReview = await aBrowser.page
-        .getByRole("button", { name: "Revisar gastos", exact: true })
+        .getByRole("button", { name: "Agregar", exact: true })
         .isEnabled();
       assert.equal(
         canReview,
@@ -335,12 +335,12 @@ try {
       );
       await command(aBrowser.page, "/api/imports", () =>
         aBrowser.page
-          .getByRole("button", { name: "Revisar gastos", exact: true })
+          .getByRole("button", { name: "Agregar", exact: true })
           .click(),
       );
     }
     await aBrowser.page
-      .getByRole("heading", { name: "Confirma tus gastos", exact: true })
+      .getByRole("dialog", { name: "Confirmar gasto", exact: true })
       .waitFor();
     assert.equal(
       (await browserJson(aBrowser.page, "/api/expenses")).expenses.filter(
@@ -348,13 +348,10 @@ try {
       ).length,
       0,
     );
-    await aBrowser.page
-      .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
-      .check();
     stage = "expense confirmation";
     await command(aBrowser.page, "/api/imports", () =>
       aBrowser.page
-        .getByRole("button", { name: "Confirmar gastos", exact: true })
+        .getByRole("button", { name: "Confirmar", exact: true })
         .click(),
     );
     await aBrowser.page
@@ -512,9 +509,12 @@ sys.stdout.buffer.write(out.getvalue())
     await aBrowser.page
       .getByLabel("Seleccionar gasto 1", { exact: true })
       .check();
-    await command(aBrowser.page, "/api/imports", () =>
+    await aBrowser.page
+      .getByLabel("He revisado gasto 1", { exact: true })
+      .check();
+    const excelReview = await command(aBrowser.page, "/api/imports", () =>
       aBrowser.page
-        .getByRole("button", { name: "Guardar borrador privado", exact: true })
+        .getByRole("button", { name: "Agregar", exact: true })
         .click(),
     );
     assert.equal(
@@ -523,17 +523,27 @@ sys.stdout.buffer.write(out.getvalue())
       ).length,
       0,
     );
+    if (excelReview.job.rows.some((row) => row.selected && !row.reviewed)) {
+      const row = excelReview.job.rows[0];
+      if (
+        row.duplicateExpenseIds.length ||
+        row.warnings.includes("DUPLICATE_IN_BATCH")
+      )
+        await aBrowser.page
+          .getByLabel("Mantener ambos en gasto 1", { exact: true })
+          .check();
+      await aBrowser.page
+        .getByLabel("He revisado gasto 1", { exact: true })
+        .check();
+      await command(aBrowser.page, "/api/imports", () =>
+        aBrowser.page
+          .getByRole("button", { name: "Agregar", exact: true })
+          .click(),
+      );
+    }
     await aBrowser.page
-      .getByLabel("He revisado gasto 1", { exact: true })
-      .check();
-    await command(aBrowser.page, "/api/imports", () =>
-      aBrowser.page
-        .getByRole("button", { name: "Revisar gastos", exact: true })
-        .click(),
-    );
-    await aBrowser.page
-      .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
-      .check();
+      .getByRole("dialog", { name: "Confirmar gasto", exact: true })
+      .waitFor();
     const confirmReply = aBrowser.page.waitForResponse(
       (r) =>
         new URL(r.url()).pathname === "/api/imports" &&
@@ -541,7 +551,7 @@ sys.stdout.buffer.write(out.getvalue())
     );
     await aBrowser.page
       .getByRole("button", {
-        name: "Confirmar gastos",
+        name: "Confirmar",
         exact: true,
       })
       .click();

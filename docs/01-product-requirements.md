@@ -43,6 +43,7 @@ Campos mínimos: descripción, fecha, importe, moneda, pagador y uno o más part
 - Se permiten importes personalizados como excepción.
 - El pagador puede estar o no dentro del reparto.
 - Antes de guardar se muestra el reparto exacto al centavo.
+- El formulario ofrece «Agregar» y «Cancelar». «Agregar» abre un modal con el resumen y las acciones «Confirmar» y «Cancelar», sin otro checkbox de confirmación. Solo «Confirmar» registra gastos.
 
 ### 3.3 Registro masivo
 
@@ -59,7 +60,7 @@ Campos mínimos: descripción, fecha, importe, moneda, pagador y uno o más part
 - La IA produce candidatos, no gastos definitivos.
 - Una previsualización permite corregir, seleccionar o descartar cada candidato.
 - Se muestran campos inciertos, advertencias, exclusiones y posibles duplicados.
-- Se pueden guardar borradores privados y temporales para recuperar el trabajo, pero ninguna fila se convierte en gasto financiero antes de la confirmación explícita.
+- No hay un flujo visible para guardar, recuperar ni recargar borradores. La preparación privada temporal del servidor valida versiones, advertencias y duplicados antes del modal; ninguna fila se convierte en gasto financiero antes de la confirmación explícita.
 
 ### 3.5 Cuadre
 
@@ -88,7 +89,7 @@ Campos mínimos: descripción, fecha, importe, moneda, pagador y uno o más part
 
 ### Registrar un gasto
 
-Abrir enlace → dashboard → «Ingresar gastos» → elegir registro individual → completar datos → seleccionar beneficiarios → revisar reparto → guardar → ver saldo actualizado.
+Ingresar → dashboard → «Ingresar gastos» → completar uno o varios gastos y su reparto → «Agregar» → modal → «Confirmar» → ver resultado. «Cancelar» en el modal conserva los campos; en el formulario vuelve al dashboard sin registrar gastos nuevos.
 
 ### Importar gastos
 
@@ -118,7 +119,7 @@ Revisar gastos → resolver advertencias → elegir modo de liquidación → si 
 - Todos los usuarios pueden explicar el origen de su saldo desde gastos concretos.
 - El plan de liquidación lleva los saldos a cero y no contiene ciclos innecesarios.
 - Ningún usuario modifica gastos ajenos mediante interfaz o llamadas directas.
-- Las importaciones pueden persistir borradores privados recuperables, pero nunca gastos financieros no confirmados.
+- Las importaciones pueden preparar datos privados temporales para validar la confirmación, pero no ofrecen guardado/recuperación de borradores ni registran gastos financieros no confirmados.
 - Los reintentos no crean duplicados.
 
 ## 8. Fuera de alcance

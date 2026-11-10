@@ -1017,6 +1017,19 @@ fieldset {
 .payment-modal::backdrop {
   background: rgb(12 30 22 / 55%);
 }
+.payment-modal.expense-confirmation-modal {
+  padding-top: 24px;
+}
+.entry-confirmation-summary {
+  padding-left: 20px;
+  margin: 16px 0;
+}
+.entry-confirmation-summary li {
+  margin-bottom: 12px;
+}
+.entry-confirmation-summary span {
+  display: block;
+}
 .payment-modal .settlement-payment-draft {
   padding: 0;
   margin: 0;
