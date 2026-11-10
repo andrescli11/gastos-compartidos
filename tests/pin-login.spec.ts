@@ -155,7 +155,7 @@ test("un PIN incorrecto se limpia y permite reintentar sin bloqueo ni almacenami
     await pin.fill("008");
     await expect(submit).toBeEnabled();
     await submit.click();
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("main").getByRole("alert")).toHaveText(
       "Usuario o PIN incorrectos.",
     );
     await expect(pin).toHaveValue("");

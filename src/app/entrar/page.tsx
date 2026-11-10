@@ -33,17 +33,24 @@ export default function Enter() {
   const [status, setStatus] = useState("Comprobando tu enlace…");
   const [pinLogin, setPinLogin] = useState(false);
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    const fragment = window.location.hash;
-    // Se limpia antes de cualquier llamada; no se guarda en localStorage ni telemetría.
-    window.history.replaceState(null, "", "/entrar");
-    if (!fragment || fragment === "#") {
-      void Promise.resolve().then(() => setPinLogin(true));
-      return;
+    function openAccess() {
+      const fragment = window.location.hash;
+      // Se limpia antes de cualquier llamada; no se guarda en localStorage ni telemetría.
+      window.history.replaceState(null, "", "/entrar");
+      if (!fragment || fragment === "#") {
+        void Promise.resolve().then(() => setPinLogin(true));
+        return;
+      }
+      void Promise.resolve().then(() => setPinLogin(false));
+      const params = new URLSearchParams(fragment.slice(1));
+      void exchange(params).then(setStatus);
     }
-    const params = new URLSearchParams(fragment.slice(1));
-    void exchange(params).then(setStatus);
+    window.addEventListener("hashchange", openAccess);
+    if (!started.current) {
+      started.current = true;
+      openAccess();
+    }
+    return () => window.removeEventListener("hashchange", openAccess);
   }, []);
   if (pinLogin) return <PinLogin />;
   return (
