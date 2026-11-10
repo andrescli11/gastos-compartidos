@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import ExpenseConfirmationModal from "./expense-confirmation-modal";
 import {
   csvCandidates,
   parseCsv,
@@ -211,7 +212,6 @@ function needsAcknowledgement(row: EditableRow, sourceType: string) {
 }
 export default function ImportWorkspace() {
   const [session, setSession] = useState<Session | null>(null);
-  const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rows, setRows] = useState<EditableRow[]>([]);
   const [sourceType, setSourceType] = useState<"manual" | "csv" | "excel">(
@@ -222,8 +222,9 @@ export default function ImportWorkspace() {
     [loading, setLoading] = useState(true);
   const [error, setError] = useState(""),
     [message, setMessage] = useState("");
-  const [review, setReview] = useState(false),
-    [confirmed, setConfirmed] = useState(false);
+  const [review, setReview] = useState(false);
+  const modalReturnFocus = useRef<HTMLElement | null>(null);
+  const leaving = useRef(false);
   const [pending, setPending] =
     useState<PendingOperation<ConfirmCommand> | null>(null);
   const [uncertain, setUncertain] = useState(false);
@@ -244,7 +245,6 @@ export default function ImportWorkspace() {
     if (cause instanceof ApiError && cause.status === 401) {
       setSession(null);
       setRows([]);
-      setJobs([]);
       setJob(null);
       setPending(null);
       setUncertain(false);
@@ -264,15 +264,11 @@ export default function ImportWorkspace() {
     setRows(value.rows.map(editable));
     setSourceType(value.sourceType);
     setDirty(false);
-    setJobs((current) => [value, ...current.filter((j) => j.id !== value.id)]);
   }, []);
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      api<Session>("/api/session"),
-      api<{ jobs: ImportJob[] }>("/api/imports"),
-    ])
-      .then(async ([s, data]) => {
+    void api<Session>("/api/session")
+      .then(async (s) => {
         const saved = await recoverPending<ConfirmCommand>(
           s.csrfToken,
           sessionStorage,
@@ -280,7 +276,6 @@ export default function ImportWorkspace() {
         );
         if (!active) return;
         setSession(s);
-        setJobs(data.jobs);
         if (saved) {
           setPending(saved);
           setUncertain(true);
@@ -301,6 +296,7 @@ export default function ImportWorkspace() {
   useEffect(() => {
     if (!dirty && !busy && !uncertain) return;
     const handler = (event: BeforeUnloadEvent) => {
+      if (leaving.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -316,7 +312,8 @@ export default function ImportWorkspace() {
       section?.scrollIntoView();
     }
   }, [loading, session]);
-  const locked = busy || uncertain || (!!job && job.state !== "preview");
+  const locked =
+    busy || uncertain || review || (!!job && job.state !== "preview");
   const completed = new Set(
     job?.results.filter((r) => r.status === "persisted").map((r) => r.rowId) ??
       [],
@@ -344,7 +341,6 @@ export default function ImportWorkspace() {
     setRows(session ? [manualExpense(session)] : []);
     setDirty(false);
     setReview(false);
-    setConfirmed(false);
     setSourceType("manual");
     setPaste("");
     setSheetId("");
@@ -368,7 +364,6 @@ export default function ImportWorkspace() {
     );
     setDirty(true);
     setReview(false);
-    setConfirmed(false);
     setError("");
     setMessage("");
   }
@@ -445,7 +440,6 @@ export default function ImportWorkspace() {
     );
     setDirty(true);
     setReview(false);
-    setConfirmed(false);
   }
   function applyTable(table: CsvTable, type: "csv" | "excel", sheet?: string) {
     if (!session) return;
@@ -506,7 +500,6 @@ export default function ImportWorkspace() {
     setSourceType(type);
     setDirty(true);
     setReview(false);
-    setConfirmed(false);
     setSourceNote(
       `${next.length} candidatos; ${preview.omittedEmptyRows.length} filas vacías omitidas. ${preview.omittedColumns.length ? `Columnas no utilizadas: ${preview.omittedColumns.join(", ")}.` : "Todas las columnas se utilizaron."}`,
     );
@@ -576,8 +569,12 @@ export default function ImportWorkspace() {
       "Idempotency-Key": key,
     };
   }
-  async function save(forReview = false) {
-    if (!session) return;
+  async function prepare() {
+    if (!session || locked || !selected.length || invalid) return;
+    modalReturnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setBusy(true);
     setError("");
     setMessage("");
@@ -589,8 +586,7 @@ export default function ImportWorkspace() {
             expectedVersion: job.version,
             rows: rows.map((row) => {
               const value = payload(row);
-              return forReview &&
-                sourceType === "manual" &&
+              return sourceType === "manual" &&
                 !needsAcknowledgement(row, sourceType) &&
                 row.selected
                 ? { ...value, reviewed: true }
@@ -602,8 +598,7 @@ export default function ImportWorkspace() {
             sourceType,
             rows: rows.map((row) => {
               const value = payload(row);
-              return forReview &&
-                sourceType === "manual" &&
+              return sourceType === "manual" &&
                 !needsAcknowledgement(row, sourceType) &&
                 row.selected
                 ? { ...value, reviewed: true }
@@ -616,67 +611,30 @@ export default function ImportWorkspace() {
         body: JSON.stringify(command),
       });
       acceptJob(response.job);
-      if (forReview) {
-        const ready = response.job.rows.filter(
-          (r) =>
-            r.selected &&
-            !response.job.results.some(
-              (result) =>
-                result.rowId === r.id && result.status === "persisted",
-            ),
-        );
-        if (
-          !ready.length ||
-          ready.some(
-            (r) =>
-              rowErrors(editable(r), session).length ||
-              !r.reviewed ||
-              ((r.duplicateExpenseIds.length > 0 ||
-                r.warnings.includes("DUPLICATE_IN_BATCH")) &&
-                !r.keepBoth),
-          )
-        ) {
-          setError(
-            "El borrador se guardó. Revisa los campos, advertencias y duplicados indicados antes de confirmar.",
-          );
-        } else {
-          setReview(true);
-          setConfirmed(false);
-        }
-      } else
-        setMessage(
-          "Borrador privado guardado. Todavía no se han creado gastos.",
-        );
-    } catch (cause) {
-      fail(cause);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function refreshJobs() {
-    setBusy(true);
-    setError("");
-    try {
-      setJobs((await api<{ jobs: ImportJob[] }>("/api/imports")).jobs);
-    } catch (cause) {
-      fail(cause);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function openJob(id: string) {
-    setBusy(true);
-    setError("");
-    setReview(false);
-    setConfirmed(false);
-    try {
-      acceptJob(
-        (
-          await api<{ job: ImportJob }>(
-            "/api/imports?id=" + encodeURIComponent(id),
-          )
-        ).job,
+      const ready = response.job.rows.filter(
+        (r) =>
+          r.selected &&
+          !response.job.results.some(
+            (result) => result.rowId === r.id && result.status === "persisted",
+          ),
       );
+      if (
+        !ready.length ||
+        ready.some(
+          (r) =>
+            rowErrors(editable(r), session).length ||
+            !r.reviewed ||
+            ((r.duplicateExpenseIds.length > 0 ||
+              r.warnings.includes("DUPLICATE_IN_BATCH")) &&
+              !r.keepBoth),
+        )
+      ) {
+        setError(
+          "Revisa los campos, advertencias y duplicados indicados antes de agregar los gastos.",
+        );
+      } else {
+        setReview(true);
+      }
     } catch (cause) {
       fail(cause);
     } finally {
@@ -684,7 +642,7 @@ export default function ImportWorkspace() {
     }
   }
   async function confirm(retry = false) {
-    if (!session || (!retry && (!job || !confirmed))) return;
+    if (!session || busy || (!retry && (!job || !review))) return;
     const operation = retry
       ? pending
       : job
@@ -719,7 +677,6 @@ export default function ImportWorkspace() {
       setPending(null);
       setUncertain(false);
       setReview(false);
-      setConfirmed(false);
       const failed = response.job.results.filter(
         (r) => r.status === "failed",
       ).length;
@@ -740,7 +697,6 @@ export default function ImportWorkspace() {
         setPending(null);
         setUncertain(false);
         setReview(false);
-        setConfirmed(false);
       } else setUncertain(true);
       fail(cause);
     } finally {
@@ -748,8 +704,10 @@ export default function ImportWorkspace() {
     }
   }
   async function cancel() {
+    if (busy || uncertain || review) return;
     if (!job) {
-      reset();
+      leaving.current = true;
+      window.location.assign("/");
       return;
     }
     setBusy(true);
@@ -768,9 +726,8 @@ export default function ImportWorkspace() {
           })
         ).job,
       );
-      setMessage(
-        "Importación cancelada. Los gastos ya guardados conservan su historial.",
-      );
+      leaving.current = true;
+      window.location.assign("/");
     } catch (cause) {
       fail(cause);
     } finally {
@@ -823,7 +780,7 @@ export default function ImportWorkspace() {
           el reparto antes de guardar.
         </p>
       </section>
-      {loading ? <p role="status">Cargando importaciones privadas…</p> : null}
+      {loading ? <p role="status">Cargando registro de gastos…</p> : null}
       {error ? (
         <p role="alert" className="error">
           {error}
@@ -835,6 +792,9 @@ export default function ImportWorkspace() {
           <Link className="primary-link" href="/">
             Ver gastos en el dashboard
           </Link>
+          <button disabled={busy || uncertain} onClick={reset}>
+            Nuevo registro
+          </button>
         </p>
       ) : null}
       {!loading && !session ? (
@@ -842,26 +802,8 @@ export default function ImportWorkspace() {
       ) : null}
       {session ? (
         <>
-          {uncertain ? (
-            <section className="notice">
-              <h2>Confirmación pendiente de comprobar</h2>
-              <p>
-                La conexión se interrumpió. No crees otro lote: reintenta
-                exactamente la misma confirmación para recuperar su resultado
-                sin duplicar gastos.
-              </p>
-              <button disabled={busy} onClick={() => void confirm(true)}>
-                Reintentar la misma confirmación
-              </button>
-            </section>
-          ) : null}
           <section className="settlement" id="manual-rows">
             <h2>Tus gastos</h2>
-            {job ? (
-              <p className="hint">
-                Caducidad: {new Date(job.expiresAt).toLocaleString("es-PE")}
-              </p>
-            ) : null}
             <fieldset disabled={locked} style={{ minWidth: 0 }}>
               {rows.map((row, index) => (
                 <article
@@ -885,7 +827,6 @@ export default function ImportWorkspace() {
                           );
                           setDirty(true);
                           setReview(false);
-                          setConfirmed(false);
                         }}
                       >
                         Quitar gasto
@@ -1306,72 +1247,94 @@ export default function ImportWorkspace() {
               </p>
             </div>
             <div className="actions">
-              {job && job.state === "preview" ? (
-                <button
-                  disabled={busy || uncertain}
-                  onClick={() => void openJob(job.id)}
-                >
-                  Descartar cambios locales y recargar borrador
-                </button>
-              ) : null}
+              <button
+                disabled={locked || !selected.length || invalid}
+                onClick={() => void prepare()}
+              >
+                {busy ? "Procesando…" : "Agregar"}
+              </button>
               <button
                 disabled={
                   locked ||
-                  !rows.some((r) => r.description || r.amountText || r.spentOn)
-                }
-                onClick={() => void save()}
-              >
-                Guardar borrador privado
-              </button>
-              <button
-                disabled={locked || !selected.length || invalid}
-                onClick={() => void save(true)}
-              >
-                Revisar gastos
-              </button>
-              <button
-                disabled={
-                  busy ||
-                  uncertain ||
                   job?.state === "persisted" ||
                   job?.state === "cancelled" ||
                   job?.state === "expired"
                 }
                 onClick={() => void cancel()}
               >
-                {job ? "Cancelar registro" : "Descartar cambios"}
+                Cancelar
               </button>
             </div>
-            {review && job ? (
-              <section
-                className="confirmation"
-                aria-labelledby="confirm-import-title"
-              >
-                <h3 id="confirm-import-title">Confirma tus gastos</h3>
-                <p>
-                  Se guardarán {selected.length} gastos por{" "}
-                  {formatMoney(totals.PEN, "PEN")} y{" "}
-                  {formatMoney(totals.USD, "USD")}. El borrador por sí solo no
-                  registra movimientos.
-                </p>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={confirmed}
-                    disabled={busy}
-                    onChange={(e) => setConfirmed(e.target.checked)}
-                  />
-                  Confirmo registrar estos gastos revisados.
-                </label>
-                <button
-                  disabled={!confirmed || busy || uncertain}
-                  onClick={() => void confirm()}
-                >
-                  Confirmar gastos
-                </button>
-              </section>
-            ) : null}
           </section>
+          <ExpenseConfirmationModal
+            open={review || uncertain}
+            locked={busy || uncertain}
+            returnFocusRef={modalReturnFocus}
+            onCancel={() => setReview(false)}
+          >
+            <h2 id="confirm-import-title" tabIndex={-1}>
+              {uncertain
+                ? "Confirmación pendiente de comprobar"
+                : selected.length === 1
+                  ? "Confirmar gasto"
+                  : "Confirmar gastos"}
+            </h2>
+            {uncertain ? (
+              <p>
+                La conexión se interrumpió. Reintenta la misma confirmación para
+                comprobar el resultado sin duplicar gastos.
+              </p>
+            ) : (
+              <>
+                <p>
+                  Se{" "}
+                  {selected.length === 1
+                    ? "agregará 1 gasto"
+                    : `agregarán ${selected.length} gastos`}{" "}
+                  por {formatMoney(totals.PEN, "PEN")} y{" "}
+                  {formatMoney(totals.USD, "USD")}.
+                </p>
+                <ul className="entry-confirmation-summary">
+                  {selected.map((row) => (
+                    <li key={row.id}>
+                      <strong>{row.description}</strong>
+                      <span>
+                        {partMoney(row.amountMinor, row.currency)} ·{" "}
+                        {row.spentOn}
+                      </span>
+                      <span>
+                        Pagado por{" "}
+                        {
+                          session.participants.find((p) => p.id === row.payerId)
+                            ?.displayName
+                        }
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {error ? (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <div className="actions">
+              <button disabled={busy} onClick={() => void confirm(uncertain)}>
+                {busy
+                  ? "Agregando…"
+                  : uncertain
+                    ? "Reintentar la misma confirmación"
+                    : "Confirmar"}
+              </button>
+              <button
+                disabled={busy || uncertain}
+                onClick={() => setReview(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </ExpenseConfirmationModal>
           {!job || job.state === "preview" ? (
             <details
               className="entry-excel-secondary"
@@ -1415,7 +1378,8 @@ export default function ImportWorkspace() {
                   CSV (hasta 15 MB) se procesa en este navegador. Excel (hasta 4
                   MB) se procesa en el servidor, sin ejecutar fórmulas ni
                   macros; se descarta el archivo original al terminar. Solo el
-                  contenido revisable del borrador se guarda de forma privada.
+                  contenido necesario para confirmar los gastos se guarda de
+                  forma privada.
                 </p>
                 <div className="filters">
                   <label htmlFor="import-separator">
@@ -1558,48 +1522,6 @@ export default function ImportWorkspace() {
               ) : null}
             </details>
           ) : null}
-          <details className="entry-drafts">
-            <summary>Recuperar borradores</summary>
-            <h2>Borradores y resultados privados</h2>
-            <p>
-              Los borradores caducan a los siete días. Guardar un borrador no
-              registra gastos.
-            </p>
-            <div className="actions">
-              <button disabled={busy || dirty || uncertain} onClick={reset}>
-                Nuevo registro
-              </button>
-              <button
-                disabled={busy || uncertain}
-                onClick={() => void refreshJobs()}
-              >
-                Actualizar lista de borradores
-              </button>
-              {jobs.map((value) => (
-                <button
-                  key={value.id}
-                  disabled={busy || dirty || uncertain}
-                  onClick={() => void openJob(value.id)}
-                >
-                  Abrir {value.sourceType} ·{" "}
-                  {value.state === "preview"
-                    ? "borrador"
-                    : value.state === "persisted"
-                      ? "guardado"
-                      : value.state === "cancelled"
-                        ? "cancelado"
-                        : "caducado"}{" "}
-                  · {new Date(value.createdAt).toLocaleDateString("es-PE")}
-                </button>
-              ))}
-            </div>
-            {dirty ? (
-              <p className="hint">
-                Hay cambios sin guardar. Guarda el borrador o descártalo antes
-                de cambiar de pantalla o abrir otro lote.
-              </p>
-            ) : null}
-          </details>
         </>
       ) : null}
       <footer>CUSCO · REGISTRO DE GASTOS</footer>

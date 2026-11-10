@@ -8,7 +8,7 @@ App privada para registrar, repartir y liquidar los gastos del único viaje a Cu
 
 - Gastos PEN/USD con reparto igual o personalizado, revisión, edición y anulación autorizadas.
 - Balances, propuesta de transferencias, liquidación separada o consolidada y pagos con confirmación del receptor.
-- Registro por lote, pegado tabular, CSV y Excel, con borradores privados recuperables durante siete días.
+- Registro individual o por lote, pegado tabular, CSV y Excel, con «Agregar» y «Cancelar» y confirmación mediante modal.
 - Evidencia, advertencias de fechas/duplicados, selección y confirmación versionada; reintentos sin duplicar filas.
 - [Plantilla Excel descargable](https://gastos-compartidos-preview.vercel.app/api/imports/template), con hoja Gastos vacía e instrucciones. CSV hasta 15 MB; Excel .xlsx hasta 4 MB.
 - Administración de enlaces: renovar y revocar con confirmación. Limpieza horaria de temporales y recuperación documentada.

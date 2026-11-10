@@ -33,7 +33,7 @@ async function fillRow(page: Page, index = 1) {
     .getByLabel(`Importe gasto ${index}`, { exact: true })
     .fill("10.01");
 }
-test("batch draft is private and creates expenses only after explicit version confirmation", async ({
+test("Agregar abre el modal y solo Confirmar registra gastos; cancelar conserva el formulario", async ({
   page,
 }) => {
   let current = draft([]);
@@ -68,12 +68,36 @@ test("batch draft is private and creates expenses only after explicit version co
   });
   await page.goto("/gastos/nuevo");
   await fillRow(page);
-  await page
-    .getByRole("button", { name: "Guardar borrador privado", exact: true })
-    .click();
+  for (const obsolete of [
+    "Guardar borrador privado",
+    "Recuperar borradores",
+    "Descartar cambios locales y recargar borrador",
+  ]) {
+    await expect(page.getByText(obsolete, { exact: true })).toHaveCount(0);
+  }
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
+  const modal = page.getByRole("dialog", {
+    name: "Confirmar gasto",
+    exact: true,
+  });
+  await expect(modal).toBeVisible();
   await expect(
-    page.getByRole("status").filter({ hasText: "Borrador privado guardado" }),
-  ).toBeVisible();
+    modal.getByRole("heading", { name: "Confirmar gasto", exact: true }),
+  ).toBeFocused();
+  await expect(
+    page.getByLabel("Descripción gasto 1", { exact: true }),
+  ).toBeDisabled();
+  await expect(modal).toContainText("Cena");
+  await expect(modal).toContainText("10.01");
+  expect(commands.map((c) => c.operation)).toEqual(["create"]);
+  await modal.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(modal).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Agregar", exact: true }),
+  ).toBeFocused();
+  await expect(
+    page.getByLabel("Descripción gasto 1", { exact: true }),
+  ).toHaveValue("Cena");
   expect(commands.map((c) => c.operation)).toEqual(["create"]);
   expect(current.rows[0]).toMatchObject({
     payerId: "a",
@@ -84,25 +108,25 @@ test("batch draft is private and creates expenses only after explicit version co
       { participantId: "b", amountMinor: "500" },
     ],
   });
-  await page
-    .getByRole("button", { name: "Revisar gastos", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+    page.getByRole("dialog", { name: /^Confirmar gastos?$/ }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", {
-      name: "Confirmar gastos",
+      name: "Confirmar",
       exact: true,
     }),
-  ).toBeDisabled();
+  ).toBeEnabled();
+  await expect(
+    page.getByLabel("Confirmo registrar estos gastos revisados.", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
   expect(commands.map((c) => c.operation)).toEqual(["create", "save"]);
   await page
-    .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
-    .check();
-  await page
     .getByRole("button", {
-      name: "Confirmar gastos",
+      name: "Confirmar",
       exact: true,
     })
     .click();
@@ -141,7 +165,7 @@ test("el reparto personalizado valida cada céntimo y descarta importes anterior
   const ana = page.getByLabel("Parte de Ana gasto 1", { exact: true });
   const bruno = page.getByLabel("Parte de Bruno gasto 1", { exact: true });
   const review = page.getByRole("button", {
-    name: "Revisar gastos",
+    name: "Agregar",
     exact: true,
   });
   await expect(type).toHaveValue("equal");
@@ -164,7 +188,7 @@ test("el reparto personalizado valida cada céntimo y descarta importes anterior
   await expect(review).toBeEnabled();
   await review.click();
   await expect(
-    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+    page.getByRole("dialog", { name: /^Confirmar gastos?$/ }),
   ).toBeVisible();
   expect(commands[0].rows?.[0]).toMatchObject({
     amountMinor: "1001",
@@ -173,9 +197,13 @@ test("el reparto personalizado valida cada céntimo y descarta importes anterior
       { participantId: "b", amountMinor: "601" },
     ],
   });
+  await page
+    .getByRole("dialog", { name: /^Confirmar gastos?$/ })
+    .getByRole("button", { name: "Cancelar", exact: true })
+    .click();
   await type.selectOption("equal");
   await expect(
-    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+    page.getByRole("dialog", { name: /^Confirmar gastos?$/ }),
   ).toHaveCount(0);
   await expect(ana).toHaveValue("5.01");
   await expect(bruno).toHaveValue("5.00");
@@ -185,7 +213,7 @@ test("el reparto personalizado valida cada céntimo y descarta importes anterior
   await expect(bruno).toHaveValue("5.00");
   await review.click();
   await expect(
-    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+    page.getByRole("dialog", { name: /^Confirmar gastos?$/ }),
   ).toBeVisible();
   expect(commands[1].rows?.[0].splits).toEqual([
     { participantId: "a", amountMinor: "501" },
@@ -264,21 +292,14 @@ test("un mismo flujo permite añadir, quitar y confirmar dos gastos", async ({
     .click();
   await fillRow(page, 2);
   expect(commands).toHaveLength(0);
-  await page
-    .getByRole("button", { name: "Revisar gastos", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+    page.getByRole("dialog", { name: /^Confirmar gastos?$/ }),
   ).toBeVisible();
   expect(current.rows).toHaveLength(2);
   expect(current.rows.every((row) => row.selected && row.reviewed)).toBe(true);
   expect(commands.map((command) => command.operation)).toEqual(["create"]);
-  await page
-    .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
-    .check();
-  await page
-    .getByRole("button", { name: "Confirmar gastos", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "Gastos guardados." }),
   ).toBeVisible();
@@ -325,15 +346,10 @@ test("uncertain confirmation is recovered after reload with the same key and com
   });
   await page.goto("/gastos/nuevo");
   await fillRow(page);
-  await page
-    .getByRole("button", { name: "Revisar gastos", exact: true })
-    .click();
-  await page
-    .getByLabel("Confirmo registrar estos gastos revisados.", { exact: true })
-    .check();
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
   await page
     .getByRole("button", {
-      name: "Confirmar gastos",
+      name: "Confirmar",
       exact: true,
     })
     .click();
@@ -382,25 +398,21 @@ test("una advertencia nueva del servidor exige revisión antes de confirmar", as
   });
   await page.goto("/gastos/nuevo");
   await fillRow(page);
-  await page
-    .getByRole("button", { name: "Revisar gastos", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
   await expect(
     page.getByLabel("He revisado gasto 1", { exact: true }),
   ).not.toBeChecked();
   await expect(
-    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+    page.getByRole("dialog", { name: /^Confirmar gastos?$/ }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Revisar gastos", exact: true }),
+    page.getByRole("button", { name: "Agregar", exact: true }),
   ).toBeDisabled();
   expect(operations).toEqual(["create"]);
   await page.getByLabel("He revisado gasto 1", { exact: true }).check();
-  await page
-    .getByRole("button", { name: "Revisar gastos", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Confirma tus gastos", exact: true }),
+    page.getByRole("dialog", { name: /^Confirmar gastos?$/ }),
   ).toBeVisible();
   expect(operations).toEqual(["create", "save"]);
 });
@@ -423,25 +435,32 @@ test("editing a duplicate row invalidates review and the keep-both decision", as
     warnings: ["NON_EXPENSE_MOVEMENT"],
     duplicateExpenseIds: ["40000000-0000-4000-8000-000000000001"],
   };
-  const current = draft([row]);
+  let current = draft([row]);
   await page.route("**/api/session", (r) => r.fulfill({ json: session }));
-  await page.route("**/api/imports**", (r) =>
-    r.fulfill({
-      json: r.request().url().includes("?id=")
-        ? { job: current }
-        : { jobs: [current] },
-    }),
-  );
+  await page.route("**/api/imports**", (r) => {
+    const command = r.request().postDataJSON();
+    current = draft(
+      command.rows.map((candidate: ImportRow) => ({
+        ...candidate,
+        reviewed: false,
+        keepBoth: false,
+        warnings: row.warnings,
+        duplicateExpenseIds: row.duplicateExpenseIds,
+      })),
+      1,
+    );
+    return r.fulfill({ json: { job: current } });
+  });
   await page.goto("/gastos/nuevo");
-  await page.getByText("Recuperar borradores", { exact: true }).click();
-  await page.getByRole("button", { name: /Abrir manual/ }).click();
+  await fillRow(page);
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Revisar gastos", exact: true }),
+    page.getByRole("button", { name: "Agregar", exact: true }),
   ).toBeDisabled();
   await page.getByLabel("Mantener ambos en gasto 1", { exact: true }).check();
   await page.getByLabel("He revisado gasto 1", { exact: true }).check();
   await expect(
-    page.getByRole("button", { name: "Revisar gastos", exact: true }),
+    page.getByRole("button", { name: "Agregar", exact: true }),
   ).toBeEnabled();
   await page
     .getByLabel("Descripción gasto 1", { exact: true })
@@ -453,7 +472,7 @@ test("editing a duplicate row invalidates review and the keep-both decision", as
     page.getByLabel("He revisado gasto 1", { exact: true }),
   ).not.toBeChecked();
   await expect(
-    page.getByRole("button", { name: "Revisar gastos", exact: true }),
+    page.getByRole("button", { name: "Agregar", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByLabel("Pagado por gasto 1", { exact: true }),
@@ -490,4 +509,128 @@ test("template download and Spanish tabular headers never auto-save", async ({
     page.getByLabel("He revisado gasto 1", { exact: true }),
   ).not.toBeChecked();
   expect(writes).toBe(0);
+});
+
+test("cancelar el registro cancela el snapshot preparado y vuelve al dashboard", async ({
+  page,
+}) => {
+  let current = draft([]);
+  const commands: string[] = [];
+  let listReads = 0;
+  await page.route("**/api/session", (route) =>
+    route.fulfill({ json: session }),
+  );
+  await page.route("**/api/imports**", (route) => {
+    if (route.request().method() === "GET") {
+      listReads++;
+      return route.fulfill({ json: { jobs: [] } });
+    }
+    const command = route.request().postDataJSON();
+    commands.push(command.operation);
+    current =
+      command.operation === "create"
+        ? draft(command.rows)
+        : { ...current, state: "cancelled", version: current.version + 1 };
+    return route.fulfill({ json: { job: current } });
+  });
+  await page.goto("/gastos/nuevo");
+  await fillRow(page);
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Confirmar gasto", exact: true })
+    .getByRole("button", { name: "Cancelar", exact: true })
+    .click();
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(page).toHaveURL("/");
+  expect(commands).toEqual(["create", "cancel"]);
+  expect(listReads).toBe(0);
+});
+
+test("un resultado parcial permite corregir y confirmar únicamente el gasto fallido", async ({
+  page,
+}) => {
+  let current = draft([]);
+  const confirmations: { operation: string; expectedVersion: number }[] = [];
+  await page.route("**/api/session", (route) =>
+    route.fulfill({ json: session }),
+  );
+  await page.route("**/api/imports**", (route) => {
+    const command = route.request().postDataJSON();
+    if (command.operation === "create") current = draft(command.rows);
+    else if (command.operation === "save")
+      current = {
+        ...current,
+        version: current.version + 1,
+        rows: command.rows,
+      };
+    else if (command.operation === "confirm") {
+      confirmations.push(command);
+      current =
+        confirmations.length === 1
+          ? {
+              ...current,
+              version: current.version + 1,
+              rows: current.rows.map((row, index) =>
+                index === 0
+                  ? { ...row, selected: false, reviewed: false }
+                  : row,
+              ),
+              results: [
+                {
+                  rowId: current.rows[0].id,
+                  status: "persisted",
+                  expenseId: "20000000-0000-4000-8000-000000000001",
+                },
+                {
+                  rowId: current.rows[1].id,
+                  status: "failed",
+                  code: "CONFLICT",
+                },
+              ],
+            }
+          : {
+              ...current,
+              version: current.version + 1,
+              state: "persisted",
+              results: current.rows.map((row, index) => ({
+                rowId: row.id,
+                status: "persisted",
+                expenseId: `20000000-0000-4000-8000-00000000000${index + 1}`,
+              })),
+            };
+    }
+    return route.fulfill({ json: { job: current } });
+  });
+  await page.goto("/gastos/nuevo");
+  await fillRow(page);
+  await page
+    .getByRole("button", { name: "Añadir otro gasto", exact: true })
+    .click();
+  await fillRow(page, 2);
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Confirmar gastos", exact: true })
+    .getByRole("button", { name: "Confirmar", exact: true })
+    .click();
+  await page
+    .getByLabel("Descripción gasto 2", { exact: true })
+    .fill("Taxi corregido");
+  await page.getByRole("button", { name: "Agregar", exact: true }).click();
+  const modal = page.getByRole("dialog", {
+    name: "Confirmar gasto",
+    exact: true,
+  });
+  await expect(modal).toContainText("Taxi corregido");
+  await expect(modal).not.toContainText("Cena");
+  await modal.getByRole("button", { name: "Confirmar", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Gastos guardados." }),
+  ).toBeVisible();
+  expect(confirmations.map((command) => command.expectedVersion)).toEqual([
+    1, 3,
+  ]);
+  expect(
+    current.results.filter((result) => result.status === "persisted"),
+  ).toHaveLength(2);
 });
