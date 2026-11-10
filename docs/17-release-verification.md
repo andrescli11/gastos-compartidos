@@ -41,3 +41,14 @@ Rollback: volver a la versión previa de Vercel manteniendo las migraciones adit
 ## Gates
 
 A/B/C/D/F superados con la evidencia anterior. Gate E deshabilitado conforme a su excepción. Gate G respaldado por configuración real verificada, migraciones aditivas, respaldo, restauración ensayada, smoke HTTPS/browser y accesos distribuidos por archivo privado del administrador. El simulador público no forma parte del libro financiero y no carga datos del grupo.
+
+## Acceso por PIN — 10 de noviembre de 2026
+
+El selector público incluye los siete participantes y el administrador, con PIN de tres dígitos y gestión exclusiva del administrador. La política sin límites de intentos ni bloqueo temporal es una decisión expresa del propietario, registrada en ADR026. Los enlaces privados siguen funcionando durante la transición.
+
+- [Quality](https://github.com/andrescli11/gastos-compartidos/actions/runs/42729953732) aprobado: formato, lint, tipos, lógica, build y 116 pruebas de navegador móvil/escritorio. Incluye PIN con ceros iniciales, reintentos, sesión por rol, gestión y apertura de un enlace privado desde la pantalla de PIN.
+- [Database](https://github.com/andrescli11/gastos-compartidos/actions/runs/42729953556) aprobado: permisos, revocación, carrera entre cambio de PIN e ingreso, idempotencia, respaldo/restauración, navegador→BFF→PostgreSQL y compatibilidad con la aplicación anterior. Revisiones independientes de backend, UI y corrección de hashchange sin bloqueos.
+- Supabase CLI generó `20261110004008_basic_pin_access.sql` en CI. La migración aplicada por Supabase obtuvo la versión real `20261110004132`; el archivo versionado con ese nombre reproduce exactamente `db/pins.sql`.
+- Se configuraron ocho verificadores, incluido uno administrativo, con ocho eventos de auditoría. Los códigos iniciales y `PIN_SECRET` permanecen fuera de Git. Catálogo verificado: sin SELECT directo de BFF/anon ni EXECUTE de anon sobre el verificador. No se escribieron gastos, repartos ni pagos para esta entrega.
+
+La evidencia de integración y publicación está en [PR 13](https://github.com/andrescli11/gastos-compartidos/pull/13). La recuperación conserva el esquema aditivo y el secreto del servidor, según el runbook.

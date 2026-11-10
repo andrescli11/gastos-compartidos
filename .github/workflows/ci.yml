@@ -24,14 +24,6 @@ jobs:
           path: node_modules/prettier/
           retention-days: 1
           if-no-files-found: error
-      - name: Generate PIN migration with Supabase CLI
-        if: hashFiles('db/pins.sql') != '' && hashFiles('supabase/migrations/*basic_pin_access.sql') == ''
-        run: |
-          npx --yes supabase@3.0.0 migration --help > /dev/null
-          npx --yes supabase@3.0.0 migration new basic_pin_access
-          for migration_source in supabase/migrations/*basic_pin_access.sql; do
-            cp db/pins.sql "$migration_source"
-          done
       - run: npm run format:check
         if: always() && steps.dependencies.outcome == 'success'
       - run: npm run lint
