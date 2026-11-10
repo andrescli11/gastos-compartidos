@@ -2,7 +2,7 @@
 
 App privada para registrar, repartir y liquidar los gastos del único viaje a Cusco.
 
-**MVP operativo:** [abrir la app](https://gastos-compartidos-preview.vercel.app). Los participantes entran con su enlace privado; el inicio muestra el dashboard y el CTA «Ingresar gastos» reúne el registro individual, por lote y desde Excel/CSV. El simulador independiente sigue disponible en `/simulador` y no guarda movimientos.
+**MVP operativo:** [abrir la app](https://gastos-compartidos-preview.vercel.app). Los participantes y el administrador pueden elegir su usuario e introducir su PIN de tres dígitos; los enlaces privados siguen disponibles durante la transición. El inicio muestra el dashboard y el CTA «Ingresar gastos» reúne el registro individual, por lote y desde Excel/CSV. El simulador independiente sigue disponible en `/simulador` y no guarda movimientos.
 
 ## Funciones disponibles
 

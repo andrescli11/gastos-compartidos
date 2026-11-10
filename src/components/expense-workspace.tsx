@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import PinLogin from "./pin-login";
 import {
   rememberPending,
   recoverPending,
@@ -74,6 +75,7 @@ export default function ExpenseWorkspace({
   const [loading, setLoading] = useState(true),
     [message, setMessage] = useState(""),
     [fatal, setFatal] = useState("");
+  const [unauthorized, setUnauthorized] = useState(false);
   const [description, setDescription] = useState(""),
     [date, setDate] = useState(""),
     [amount, setAmount] = useState(""),
@@ -117,6 +119,7 @@ export default function ExpenseWorkspace({
       setExpenses([]);
       setSummary(null);
       setReview(null);
+      setUnauthorized(true);
       setFatal(error.message);
       return;
     }
@@ -172,6 +175,7 @@ export default function ExpenseWorkspace({
         if (!abortRef.current) {
           setContext(null);
           setExpenses([]);
+          setUnauthorized(error instanceof ApiError && error.status === 401);
           setFatal(
             error instanceof Error ? error.message : "No se pudo conectar.",
           );
@@ -403,6 +407,7 @@ export default function ExpenseWorkspace({
         <p role="status">Cargando tu sesión…</p>
       </main>
     );
+  if (unauthorized) return <PinLogin />;
   if (fatal || !context)
     return (
       <main>

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import PinLogin from "@/components/pin-login";
 import { useEffect, useRef, useState } from "react";
 
 async function exchange(params: URLSearchParams): Promise<string> {
@@ -30,15 +31,21 @@ async function exchange(params: URLSearchParams): Promise<string> {
 export default function Enter() {
   const started = useRef(false);
   const [status, setStatus] = useState("Comprobando tu enlace…");
+  const [pinLogin, setPinLogin] = useState(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     const fragment = window.location.hash;
     // Se limpia antes de cualquier llamada; no se guarda en localStorage ni telemetría.
     window.history.replaceState(null, "", "/entrar");
+    if (!fragment || fragment === "#") {
+      void Promise.resolve().then(() => setPinLogin(true));
+      return;
+    }
     const params = new URLSearchParams(fragment.slice(1));
     void exchange(params).then(setStatus);
   }, []);
+  if (pinLogin) return <PinLogin />;
   return (
     <main className="access-screen">
       <p className="eyebrow">CUSCO · ACCESO PRIVADO</p>

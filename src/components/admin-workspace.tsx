@@ -178,9 +178,22 @@ export default function AdminWorkspace() {
           </Link>
         </p>
       ) : null}
+      {snapshot ? (
+        <p>
+          <Link
+            href="/administrar/pines"
+            onNavigate={(event) => {
+              if (review || busy) event.preventDefault();
+            }}
+          >
+            Gestionar PIN
+          </Link>
+        </p>
+      ) : null}
       <p>
         Revocar invalida el enlace y sus sesiones. Renovar crea un enlace nuevo
-        y deja inutilizable el anterior.
+        y deja inutilizable el anterior. Si renuevas un enlace privado,
+        configura un PIN nuevo para ese acceso.
       </p>
       {error ? (
         <p role="alert" className="error">
