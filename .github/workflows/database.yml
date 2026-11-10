@@ -30,6 +30,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:local-ci-fixture-only@127.0.0.1:5432/cusco_test
       APP_URL: http://127.0.0.1:3000
       RATE_LIMIT_SECRET: disposable-ci-http-quota-fixture-only-00000000
+      PIN_SECRET: disposable-ci-pin-pepper-fixture-only-000000000
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -84,6 +85,7 @@ jobs:
         env:
           PORT: 3002
           APP_URL: http://127.0.0.1:3002
+          RATE_LIMIT_SECRET: disposable-ci-rollback-quota-fixture-only-00000000
         shell: bash
         run: |
           npm run start --prefix .rollback-source > /tmp/cusco-rollback-server.log 2>&1 &

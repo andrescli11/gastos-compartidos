@@ -21,8 +21,10 @@ try {
   );
   assert.equal(destination.pathname, "/cusco_test");
   assert.equal(destination.port, env.PGPORT || "5432");
+  assert(typeof env.PIN_SECRET === "string" && env.PIN_SECRET.length >= 32);
   const { Client } = await import("pg");
   const { chromium } = await import("@playwright/test");
+  const { hashPin } = await import("../src/server/pin-crypto.ts");
   database = new Client({
     host: env.PGHOST,
     port: Number(env.PGPORT || "5432"),
@@ -69,6 +71,40 @@ try {
     }, path);
   }
 
+  async function pinLogin(page, actor, pin, expectedStatus = 200) {
+    await page
+      .getByLabel("Usuario", { exact: true })
+      .selectOption(actor.linkId);
+    await page.getByLabel("PIN de acceso", { exact: true }).fill(pin);
+    const pending = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/access/pin" &&
+        response.request().method() === "POST",
+    );
+    const [response] = await Promise.all([
+      pending,
+      page.getByRole("button", { name: "Ingresar", exact: true }).click(),
+    ]);
+    assert.equal(response.status(), expectedStatus);
+    if (expectedStatus === 200) {
+      await page
+        .getByRole("link", { name: "Ingresar gastos", exact: true })
+        .waitFor();
+      const cookie = (await page.context().cookies()).find(
+        (item) => item.name === "__Host-cusco_session",
+      );
+      assert(cookie?.secure && cookie.httpOnly && cookie.sameSite === "Lax");
+    } else {
+      await page
+        .getByRole("alert")
+        .filter({ hasText: "Usuario o PIN incorrectos." })
+        .waitFor();
+      await page.waitForFunction(
+        () => document.getElementById("login-pin")?.value === "",
+      );
+    }
+  }
+
   for (const viewport of [
     { width: 1280, height: 900 },
     { width: 390, height: 844 },
@@ -101,8 +137,8 @@ try {
           "insert into app_private.participants(id,trip_id,display_name) values($1,$2,$3)",
           [actor.id, trip, actor.name],
         );
-      await database.query(
-        "insert into app_private.access_links(trip_id,participant_id,role,token_hash) values($1,$2,$3,$4)",
+      const insertedLink = await database.query(
+        "insert into app_private.access_links(trip_id,participant_id,role,token_hash) values($1,$2,$3,$4) returning id",
         [
           trip,
           actor.id,
@@ -110,11 +146,101 @@ try {
           createHash("sha256").update(actor.token).digest("hex"),
         ],
       );
+      actor.linkId = insertedLink.rows[0].id;
     }
     await database.query("commit");
 
+    stage = "PIN fixtures";
+    for (const [actor, pin] of [
+      [a, "007"],
+      [admin, "000"],
+    ]) {
+      const verifier = await hashPin(pin, actor.linkId, env.PIN_SECRET);
+      await database.query(
+        "insert into app_private.pin_credentials(link_id,verifier) values($1,$2)",
+        [actor.linkId, verifier],
+      );
+    }
+    stage = "public PIN login";
+    const pinParticipantContext = await browser.newContext({ viewport });
+    const pinParticipantPage = await pinParticipantContext.newPage();
+    pinParticipantPage.setDefaultTimeout(15000);
+    await pinParticipantPage.goto(base);
+    await pinLogin(pinParticipantPage, a, "008", 401);
+    await pinLogin(pinParticipantPage, a, "007");
+    const pinParticipant = await browserJson(
+      pinParticipantPage,
+      "/api/session",
+    );
+    assert.equal(pinParticipant.role, "participant");
+    assert.equal(pinParticipant.participantId, a.id);
+    assert.equal(
+      await pinParticipantPage.evaluate(
+        () => localStorage.length + sessionStorage.length,
+      ),
+      0,
+    );
+
+    stage = "administrator PIN login";
+    const pinAdminContext = await browser.newContext({ viewport });
+    const pinAdminPage = await pinAdminContext.newPage();
+    pinAdminPage.setDefaultTimeout(15000);
+    await pinAdminPage.goto(`${base}/entrar`);
+    await pinLogin(pinAdminPage, admin, "000");
+    assert.equal(
+      (await browserJson(pinAdminPage, "/api/session")).role,
+      "admin",
+    );
+    const adminBrowser = { context: pinAdminContext, page: pinAdminPage };
+
+    stage = "administrator resets PIN and invalidates old session";
+    const managedPins = await browserJson(
+      pinAdminPage,
+      "/api/access/pin/manage",
+    );
+    const pinTarget = managedPins.users.find((user) => user.id === a.linkId);
+    assert(pinTarget);
+    const resetStatus = await pinAdminPage.evaluate(
+      async (data) => {
+        const response = await fetch("/api/access/pin/manage", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": data.csrf,
+            "Idempotency-Key": data.key,
+          },
+          body: JSON.stringify(data.command),
+        });
+        return response.status;
+      },
+      {
+        csrf: managedPins.csrfToken,
+        key: randomUUID(),
+        command: {
+          operation: "set",
+          id: a.linkId,
+          expectedVersion: pinTarget.version,
+          pin: "019",
+        },
+      },
+    );
+    assert.equal(resetStatus, 200);
+    assert.equal(
+      await pinParticipantPage.evaluate(
+        async () => (await fetch("/api/session", { cache: "no-store" })).status,
+      ),
+      401,
+    );
+    await pinParticipantPage.goto(base);
+    await pinLogin(pinParticipantPage, a, "007", 401);
+    await pinLogin(pinParticipantPage, a, "019");
+    assert.equal(
+      (await browserJson(pinParticipantPage, "/api/session")).participantId,
+      a.id,
+    );
+    await pinParticipantContext.close();
+
     stage = "administrator browser session";
-    const adminBrowser = await enter(admin, viewport);
     await adminBrowser.page.goto(`${base}/administrar/liquidacion`);
     await adminBrowser.page.getByLabel("Modo", { exact: true }).waitFor();
     assert.equal(
@@ -141,7 +267,8 @@ try {
       }
     }
 
-    stage = "participant browser session";
+    // The existing private token remains usable after a PIN reset.
+    stage = "private link after PIN reset";
     const aBrowser = await enter(a, viewport);
     await aBrowser.page
       .getByRole("link", { name: "Ingresar gastos", exact: true })
