@@ -85,6 +85,7 @@ jobs:
         env:
           PORT: 3002
           APP_URL: http://127.0.0.1:3002
+          RATE_LIMIT_SECRET: disposable-ci-rollback-quota-fixture-only-00000000
         shell: bash
         run: |
           npm run start --prefix .rollback-source > /tmp/cusco-rollback-server.log 2>&1 &
